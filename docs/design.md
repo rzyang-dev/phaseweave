@@ -176,7 +176,7 @@ View 页有当前通道的颜色条（调色板 LUT 采样 + 模型范围/单位
 `X axis [min,max]  Y axis [min,max]`。右键选点后，**Inspect** 页显示 cell、轴值、
 状态和通道值；map 模型没有独立窗口检查器，Inspect 就是它的检查器。
 
-Export PNG 写当前 CPU 颜色化的 RGBA8 atlas（最小 zlib PNG writer，不写叠加线/面板）；
+Export PNG 写当前 CPU 颜色化的 RGBA8 atlas；可选 `PNG ov` 把 Grid/刻度/轴名/选中圈栅格化进 PNG（不写面板）；
 Export CSV 每格一行，列名前缀 `x_`/`y_`/`state_`/`ch_`，避免不同模型的同名通道冲突。
 文件默认写入 exe 旁的 `exports/`，带时间戳；Save As 可选择路径。
 
@@ -294,9 +294,9 @@ zip 约 3.9 MB，exe 约 449 KB。
 - 内置模型（双摆/Logistic/Hénon/Standard/Gingerbread）+ Lua 表达式 map/ODE；全模型 GPU + 数字刻度 + 轴名直绘已完成；
 - GUI 默认 CPU；Kernel=GPU 可启用全模型 GPU atlas；
 - map 只有面板 Inspect，没有独立窗口 inspector；
-- 无文件选择对话框、实验保存/加载；PNG 只包含 atlas；
+- 文件选择/实验保存加载/PNG 叠加均已实现；
 - 能量范围固定；极端参数会饱和；
-- 无 3D 切片/分岔连续化。
+- Poincaré/3D 切片/分岔连续化不在目标内。
 
 ## 14. 路线
 

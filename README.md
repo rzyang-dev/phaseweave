@@ -25,7 +25,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.31.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.32.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -355,7 +355,7 @@ View 下拉的 **converge**：
 - Export CSV：每格一行，列为
   `model,ix,iy,x_<axis>,y_<axis>,state_<...>,ch_<...>`；
 - 导出默认目录是 exe 旁的 `exports/`，Save As 可改路径；面板 Last 显示完整路径；
-- 没有文件选择对话框，PNG 只包含 atlas，不包含面板/叠加线。
+- 导出可用原生 Save As；`PNG ov` 可把 Grid/刻度/轴名/选中圈栅格化进 PNG，不包含面板窗口。
 
 ## 通道与后处理
 
@@ -436,15 +436,28 @@ src/selftest.c      CPU 141 项；含 GPU 的 181 项
 
 ## 已知边界 / 下一步
 
-1. Lua 自定义模型支持 map/ODE、控制流、CPU+GLSL；所有模型已有 GPU；还缺地图轴刻度。
+1. Lua 自定义模型支持 map/ODE、控制流、CPU+GLSL；所有模型已有 GPU；地图数字刻度/轴名已有。
 2. GPU compute atlas 覆盖所有内置模型 + Lua custom；CPU 仍是回退/验证基线。
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出默认在 exe 旁 exports/，可 Save As。
-5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴/会话/FTLE/escape/final/basin/cluster/converge、导出、Standard/Gingerbread 已完成；还缺 Poincaré/切片；目标是 2D 地图。
+5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 叠加由 `PNG ov` 控制。
+6. 控制流/ODE、全模型 GPU、轴/会话/FTLE/escape/final/basin/cluster/converge、导出、Standard/Gingerbread 均已完成；Poincaré/切片是可选扩展，不是当前 2D 地图目标。
+
+## 交付状态
+
+总目标要求已覆盖：
+
+- 通用 Model / Experiment / Atlas / Channels / View / Panel 分层；
+- 双摆、Logistic、Hénon、Standard、Gingerbreadman、Lua custom；
+- 参数/轴/通道/后处理/模型切换；
+- Lua schema + map/ODE 表达式 + CPU 字节码 + GLSL；
+- 全模型 GPU compute atlas + CPU 回退；
+- colorbar、数字刻度/轴名、选中值 Inspect、PNG/CSV Save As + PNG 叠加；
+- 会话保存/恢复、最近实验、FTLE/escape/final/basin/cluster/converge；
+- 自检、物理/数值对照、portable zip、README/design/verification、git 历史。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.31.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.32.0.zip`

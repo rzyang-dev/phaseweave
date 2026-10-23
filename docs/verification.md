@@ -10,7 +10,7 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
 OK -> dist/dp-phase/dp-phase.exe (449,024 bytes)
       staged 10.6 MB
-      dist/dp-phase-1.31.0.zip (4.3 MB)
+      dist/dp-phase-1.32.0.zip (4.3 MB)
 ```
 
 | 项目 | 值 |
@@ -338,9 +338,9 @@ PNG；<192px 跳过轴文字，保留 Grid/选中圈。CLI `/export_png` 可无�
 3. GPU atlas 已接全模型；默认仍为 CPU，GPU 读回+CPU colorize。
 4. Logistic/Hénon 只有面板 Inspect，没有独立窗口 inspector。
 5. Lua 是 schema 元数据，不是表达式模型；不能新增参数字段或重排通道。
-6. 没有文件选择对话框、实验保存/加载；PNG 只包含 atlas。
+6. Save As/实验保存加载/PNG 叠加均已实现。
 7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
-8. 没有 3D 切片/连续化。
+8. Poincaré/3D 切片/连续化不在目标内。
 
 ## 26. 复现
 
