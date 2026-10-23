@@ -6,16 +6,16 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ## 1. 构建
 
 ```text
-[3/6] compiling C skeleton (24 objects)
+[3/6] compiling C skeleton (25 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (809,984 bytes)
+OK -> dist/dp-phase/dp-phase.exe (815,616 bytes)
       staged 10.4 MB
-      dist/dp-phase-1.13.0.zip (3.9 MB)
+      dist/dp-phase-1.14.0.zip (3.9 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 809,984 B |
+| exe | 815,616 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -57,8 +57,8 @@ OK -> dist/dp-phase/dp-phase.exe (809,984 bytes)
 selftest: 117 passed, 0 failed
 ```
 
-`/gpu-selftest`：**137/137**（117 CPU + 旧 GPU + 表达式/ODE/GPU atlas 回归）。
-GUI 采样仍是 CPU；GPU 只负责 atlas RGBA 显示和线叠加。
+`/gpu-selftest`：**149/149**（117 CPU + 旧 GPU + 表达式/ODE/全模型 GPU atlas 回归）。
+GUI 默认采样 CPU；View 的 Kernel=GPU 可启用全模型 GPU atlas（读回后再 CPU colorize/显示）。
 
 ## 3. 双摆三窗口
 
@@ -201,17 +201,17 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
   [ok]   GPU custom dispatch
   [ok]   GPU custom state matches CPU
   [ok]   GPU custom channels match CPU
-selftest: 137 passed, 0 failed
+selftest: 149 passed, 0 failed
 ```
 
 测试用单格 10 步 + 8×8 atlas 2 步 Hénon 表达式；单格容差 1e-5，atlas 2 步逐值一致。
-GUI 的 **Kernel** 下拉可选 CPU/GPU（仅 Lua 自定义模型）：
+GUI 的 **Kernel** 下拉对全部模型可选 CPU/GPU：
 
 ![GPU 自定义模型](shot-custom-gpu.png)
 
 ![GPU 面板](shot-custom-gpu-panel.png)
 
-标题/状态显示 GPU；双摆/Logistic/Hénon 选择 GPU 会回退 CPU 并提示。
+标题/状态显示 GPU；双摆/Logistic/Hénon/Lua custom 的 2 步 GPU atlas 都与 CPU 对照通过。
 CPU double 与 GPU float 在长时间混沌轨道上会分叉，这是精度差异。
 
 ## 11. 实验保存/加载
@@ -246,7 +246,7 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 - 双摆 64×64：142–147 fps；
 - Logistic/Hénon 64×64：140+ fps；
 - 64×64 双摆每步约 2 ms（8 线程）；
-- 256×256 CPU 仍可算，但约 16 倍成本，GPU compute 未接 GUI。
+- 256×256 CPU 仍可算，但约 16 倍成本；GPU atlas 对全模型可用，仍有 CPU 回退。
 
 ## 15. 本次修掉的问题
 
@@ -267,7 +267,7 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
-3. GUI 采样 CPU；GPU compute 未接。
+3. GPU atlas 已接全模型；默认仍为 CPU，GPU 读回+CPU colorize。
 4. Logistic/Hénon 只有面板 Inspect，没有独立窗口 inspector。
 5. Lua 是 schema 元数据，不是表达式模型；不能新增参数字段或重排通道。
 6. 没有文件选择对话框、实验保存/加载；PNG 只包含 atlas。

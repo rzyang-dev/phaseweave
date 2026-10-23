@@ -7,6 +7,7 @@
 #include "gpu.h"
 #include "lua_hot.h"
 #include "model_custom.h"
+#include "model_glsl.h"
 #include "phase_view.h"
 #include "pendulum_view.h"
 #include "panel.h"
@@ -39,7 +40,7 @@ struct App {
     CustomModel custom;
     int      has_custom;
     int      backend_gpu;
-    int      gpu_custom_ok;
+    int      gpu_atlas_ok;
     float   *gpu_cells;
     float   *gpu_chans;
     size_t   gpu_cells_cap;
@@ -103,7 +104,7 @@ static void app_render_phase(App *a);
 static void app_apply_experiment(App *a);
 static void app_colorize(App *a);
 static int  app_apply_schema(App *a, int defaults);
-static int  app_prepare_custom_gpu(App *a);
+static int  app_prepare_gpu(App *a);
 static int  app_gpu_advance(App *a, int steps);
 static int  app_save_session(App *a, const char *path);
 static int  app_load_session(App *a, const char *path);
@@ -128,10 +129,11 @@ static void app_set_model(App *a, const char *id)
         a->atlas = atlas_create(&a->exp, a->exp.res, err, sizeof(err));
         if (!a->atlas) app_error_box(a, err[0] ? err : "atlas creation failed");
     }
-    if (strcmp(a->exp.model, "custom") != 0) a->backend_gpu = 0;
-    else {
-        app_prepare_custom_gpu(a);
-        if (!a->gpu_custom_ok) a->backend_gpu = 0;
+    {
+        int want_gpu = a->backend_gpu;
+        a->backend_gpu = 0;
+        app_prepare_gpu(a);
+        if (want_gpu && a->gpu_atlas_ok) a->backend_gpu = 1;
     }
     if (a->plat && !a->opt.capture_path && strcmp(a->exp.model, "double_pendulum") == 0) {
         a->pview = pendulum_view_create(a->inst, L"Double Pendulum",
@@ -200,7 +202,7 @@ static void app_set_title(App *a, int force)
     a->title_t = now;
     exp_channel_info(&a->exp, a->exp.channel, &ci);
     snprintf(buf, sizeof(buf), "%s Atlas | %s | %d fps | %dx%d | %s%s",
-             a->exp.title, (a->backend_gpu && a->gpu_custom_ok) ? "GPU" : "CPU",
+             a->exp.title, (a->backend_gpu && a->gpu_atlas_ok) ? "GPU" : "CPU",
              (int)(a->fps + 0.5), a->exp.res, a->exp.res,
              ci.name, a->exp.paused ? " | paused" : "");
     platform_set_title(a->plat, buf);
@@ -254,18 +256,21 @@ static void app_apply_experiment(App *a)
     app_set_title(a, 1);
 }
 
-static int app_prepare_custom_gpu(App *a)
+static int app_prepare_gpu(App *a)
 {
     char glsl[32768], err[1024];
     if (!a) return 0;
-    a->gpu_custom_ok = 0;
+    a->gpu_atlas_ok = 0;
     if (!a->gpu) return 0;
-    if (!a->has_custom) return 0;
-    if (strcmp(a->exp.model, "custom") != 0) return 0;
     glsl[0] = 0; err[0] = 0;
-    if (!custom_model_glsl(&a->custom, glsl, sizeof(glsl), err, sizeof(err))) return 0;
+    if (strcmp(a->exp.model, "custom") == 0) {
+        if (!a->has_custom) return 0;
+        if (!custom_model_glsl(&a->custom, glsl, sizeof(glsl), err, sizeof(err))) return 0;
+    } else {
+        if (!model_builtin_glsl(&a->exp, glsl, sizeof(glsl), err, sizeof(err))) return 0;
+    }
     if (!gpu_compile_custom(a->gpu, glsl, err, sizeof(err))) return 0;
-    a->gpu_custom_ok = 1;
+    a->gpu_atlas_ok = 1;
     return 1;
 }
 
@@ -275,7 +280,7 @@ static int app_gpu_advance(App *a, int steps)
     size_t n, cn, hn;
     char err[512];
     float *cells;
-    if (!a || !a->atlas || !a->gpu || !a->gpu_custom_ok || !a->backend_gpu) return 0;
+    if (!a || !a->atlas || !a->gpu || !a->gpu_atlas_ok || !a->backend_gpu) return 0;
     res = atlas_res(a->atlas);
     n = (size_t)res * (size_t)res;
     cn = n * 16u;
@@ -396,11 +401,11 @@ static void app_reload(App *a)
         }
     }
     app_apply_schema(a, 0);
-    if (strcmp(a->exp.model, "custom") == 0) {
-        app_prepare_custom_gpu(a);
-        if (!a->gpu_custom_ok) a->backend_gpu = 0;
-    } else {
+    {
+        int want_gpu = a->backend_gpu;
         a->backend_gpu = 0;
+        app_prepare_gpu(a);
+        if (want_gpu && a->gpu_atlas_ok) a->backend_gpu = 1;
     }
     app_load_palette(a);
     app_apply_experiment(a);
@@ -577,12 +582,11 @@ static int app_load_session(App *a, const char *path)
     if (a->atlas) atlas_destroy(a->atlas);
     a->atlas = atlas_create(&a->exp, a->exp.res, err, sizeof(err));
     if (!a->atlas) { app_set_last(a, err[0] ? err : "atlas creation failed"); return 0; }
-    a->backend_gpu = s.backend_gpu ? 1 : 0;
-    if (strcmp(a->exp.model, "custom") == 0) {
-        app_prepare_custom_gpu(a);
-        if (!a->gpu_custom_ok) a->backend_gpu = 0;
-    } else {
+    {
+        int want_gpu = s.backend_gpu;
         a->backend_gpu = 0;
+        app_prepare_gpu(a);
+        if (want_gpu && a->gpu_atlas_ok) a->backend_gpu = 1;
     }
     app_load_palette(a);
     app_colorize(a);
@@ -788,10 +792,7 @@ static int app_do_action(App *a, const char *name, const char *value)
     }
     if (strcmp(name, "backend_set") == 0) {
         if (value && strcmp(value, "gpu") == 0) {
-            if (strcmp(a->exp.model, "custom") != 0 || !a->has_custom) {
-                a->backend_gpu = 0;
-                app_set_last(a, "GPU backend requires a Lua expression model");
-            } else if (!app_prepare_custom_gpu(a)) {
+            if (!app_prepare_gpu(a)) {
                 a->backend_gpu = 0;
                 app_set_last(a, "GPU shader unavailable; CPU fallback");
             } else {
@@ -888,7 +889,7 @@ static void panel_status_cb(void *user, PanelStatus *st)
     if (!a || !st) return;
     memset(st, 0, sizeof(*st));
     st->paused = a->exp.paused;
-    st->kernel_gpu = a->backend_gpu && a->gpu_custom_ok;
+    st->kernel_gpu = a->backend_gpu && a->gpu_atlas_ok;
     st->res = a->exp.res;
     st->fps = (int)(a->fps + 0.5);
     st->grid = a->exp.grid;
@@ -1125,9 +1126,8 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
         a->legacy = gpu_legacy(a->gpu);
         platform_set_vsync(a->plat, gpu_vsync(a->gpu));
         gpu_set_range(a->gpu, 1.0);
-        app_prepare_custom_gpu(a);
-        if (opt->force_kernel == DP_KERNEL_GPU && a->gpu_custom_ok &&
-            strcmp(a->exp.model, "custom") == 0)
+        app_prepare_gpu(a);
+        if (opt->force_kernel == DP_KERNEL_GPU && a->gpu_atlas_ok)
             a->backend_gpu = 1;
 
         if (!opt->capture_path) {

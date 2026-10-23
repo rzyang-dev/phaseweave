@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.13.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.14.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -98,13 +98,15 @@ M5b 又加了 **GLSL 代码生成**：`expr_to_glsl()` 把 postfix 字节码转�
 `custom_model_glsl()` 生成 compute shader，`gpu_compile_custom/gpu_run_custom` 编译并执行。
 GPU 单格结果与 CPU 逐值匹配（双精度 CPU vs float GPU，容差 1e-5）。
 
-**M6：GPU compute atlas 已接 GUI（自定义模型）**。View 页的 **Kernel** 可选 CPU/GPU：
+**M6/M8：GPU compute atlas 已覆盖全部内置模型 + Lua 自定义模型**。View 页的 **Kernel** 可选 CPU/GPU：
 
-- GPU 后端把整张 Atlas cells 上传，dispatch 表达式 compute，再读回 state/channels，
+- GPU 后端把整张 Atlas cells 上传，dispatch 模型 compute，再读回 state/channels，
   交给现有 CPU colorize；
-- 双摆/Logistic/Hénon 仍只支持 CPU；选择 GPU 会自动回退并提示；
+- 双摆/Logistic/Hénon/Lua custom 都有 GPU shader；
+- 所有模型可选 GPU；编译/上下文失败自动回退 CPU 并提示；
 - 标题/状态显示 GPU；CPU/GPU 结果在 2 步 atlas 测试中一致；
-- GPU float 与 CPU double 在长时间混沌轨道上会分叉，这是预期。
+- GPU float 与 CPU double 在长时间混沌轨道上会分叉，这是预期；
+- 2 步 atlas GPU/CPU 对照：双摆 < 1.2e-5，Logistic/Hénon < 5e-7。
 
 ![GPU 自定义模型](docs/shot-custom-gpu.png)
 
@@ -125,8 +127,8 @@ GPU 单格结果与 CPU 逐值匹配（双精度 CPU vs float GPU，容差 1e-5�
 GLSL 的条件必须是 bool（比较/逻辑结果），CPU 仍接受数值真值。自定义 `x_abs` 通道
 已改为 `if(x < 0, -x, x)`，CPU/GPU 都通过测试。
 
-当前限制：只支持 2 状态 map、无 ODE；GPU 只对 Lua 自定义模型；
-CPU/GPU 长时间混沌轨道会因精度分叉；默认 custom 示例仍是 Hénon map，ODE 是 opt-in。
+当前限制：自定义模型固定 2 状态；ODE 是 opt-in（默认示例仍为 Hénon map）；
+所有模型支持 GPU，但 CPU/GPU 长时间混沌轨道会因精度分叉。
 
 ![Lua 表达式模型](docs/shot-custom.png)
 
@@ -267,33 +269,34 @@ src/schema.h        Lua↔Experiment 的 schema 元数据
 src/atlas.c/h       每像素 state+params、调用模型、通道、后处理、RGBA
 src/app.c           窗口/帧循环/模型切换/选择/预设
 src/gpu.c           OpenGL 4.3 上下文、动态 compute、GPU atlas、显示
+src/model_glsl.c    双摆/Logistic/Hénon 的 GPU shader
 src/phase_view.c    归一化 [0,1] 视图、pick、平移/缩放、格线/圆圈
 src/panel.c         Tcl/Tk 宿主与 dp_action/dp_status/dp_query
 src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 117 项；含 GPU 的 137 项
+src/selftest.c      CPU 117 项；含 GPU 的 149 项
 ```
 
 ## 验证
 
 - `/selftest`：**117/117**
-- `/gpu-selftest`：**137/137**
+- `/gpu-selftest`：**149/149**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
 ## 已知边界 / 下一步
 
-1. Lua 自定义模型支持 map 与 ODE、控制流、CPU+GLSL；还没有全模型 GPU 与地图轴刻度。
-2. GPU compute atlas 目前只支持 Lua 自定义模型；双摆/Logistic/Hénon 走 CPU。
+1. Lua 自定义模型支持 map/ODE、控制流、CPU+GLSL；所有模型已有 GPU；还缺地图轴刻度。
+2. GPU compute atlas 覆盖所有内置模型 + Lua custom；CPU 仍是回退/验证基线。
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出仍固定到 exe 旁 exports/。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 还没有控制流/ODE 表达式、全模型 GPU、地图边缘轴刻度；目标是 2D 地图，不是 AUTO/MatCont。
+6. 控制流/ODE 和全模型 GPU 已完成；还缺地图边缘轴刻度、更多会话状态；目标是 2D 地图，不是 AUTO/MatCont。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.13.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.14.0.zip`

@@ -9,6 +9,7 @@
 #include "gpu.h"
 #include "lua_hot.h"
 #include "model_custom.h"
+#include "model_glsl.h"
 #include "phase_view.h"
 #include "session.h"
 #include "physics.h"
@@ -801,6 +802,50 @@ static void test_bmp(void)
     DeleteFileA(path);
 }
 
+static void test_gpu_builtin(Gpu *g, const Model *m, const char *name)
+{
+    Experiment e;
+    Atlas *a;
+    char err[1024], glsl[32768];
+    int n, stride, i;
+    float *init, *cpu, *cpu_ch, *gout, *gch;
+    exp_init(&e, m);
+    e.res = 8;
+    a = atlas_create(&e, 8, err, sizeof(err));
+    if (!a) { checkf(0, "%s atlas creation: %s", name, err); return; }
+    n = 8 * 8; stride = atlas_cell_floats();
+    init = (float *)malloc((size_t)n * stride * sizeof(float));
+    cpu = (float *)malloc((size_t)n * stride * sizeof(float));
+    cpu_ch = (float *)malloc((size_t)n * 4u * sizeof(float));
+    gout = (float *)malloc((size_t)n * stride * sizeof(float));
+    gch = (float *)malloc((size_t)n * 4u * sizeof(float));
+    memcpy(init, atlas_cell_data(a), (size_t)n * stride * sizeof(float));
+    atlas_step(a, &e, 2);
+    memcpy(cpu, atlas_cell_data(a), (size_t)n * stride * sizeof(float));
+    memcpy(cpu_ch, atlas_channel_data(a), (size_t)n * 4u * sizeof(float));
+    check(model_builtin_glsl(&e, glsl, sizeof(glsl), err, sizeof(err)) == 1,
+          name);
+    check(gpu_compile_custom(g, glsl, err, sizeof(err)) == 1, name);
+    check(gpu_run_custom(g, init, 8, 2, e.dt, gout, gch, err, sizeof(err)) == 1, name);
+    {
+        double md = 0.0, mc = 0.0;
+        for (i = 0; i < n; ++i) {
+            double dx = fabs(gout[i*stride+0] - cpu[i*stride+0]);
+            double dy = fabs(gout[i*stride+1] - cpu[i*stride+1]);
+            int k;
+            if (dx > md) md = dx;
+            if (dy > md) md = dy;
+            for (k = 0; k < 4; ++k) {
+                double dc = fabs(gch[i*4+k] - cpu_ch[i*4+k]);
+                if (dc > mc) mc = dc;
+            }
+        }
+        checkf(md < 2e-3 && mc < 2e-3, "%s", name);
+    }
+    free(init); free(cpu); free(cpu_ch); free(gout); free(gch);
+    atlas_destroy(a);
+}
+
 static void test_gpu_custom(Gpu *g)
 {
     CustomSpec spec;
@@ -915,6 +960,9 @@ static void test_gpu_custom(Gpu *g)
         check(fabs(oout[0] - ost[0]) < 1e-4 && fabs(oout[1] - ost[1]) < 1e-4,
               "GPU ODE matches CPU");
     }
+    test_gpu_builtin(g, &LOGISTIC_MODEL, "logistic GPU atlas matches CPU");
+    test_gpu_builtin(g, &HENON_MODEL, "henon GPU atlas matches CPU");
+    test_gpu_builtin(g, &DP_MODEL, "double-pendulum GPU atlas matches CPU");
 }
 
 static void test_gpu(void)
