@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (25 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (428,544 bytes)
+OK -> dist/dp-phase/dp-phase.exe (429,568 bytes)
       staged 10.1 MB
-      dist/dp-phase-1.17.0.zip (3.9 MB)
+      dist/dp-phase-1.18.0.zip (3.9 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 428,544 B |
+| exe | 429,568 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -239,8 +239,8 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 
 ## 13. 会话选中格/最近实验
 
-`.dps` 新增 `selected/sel_x/sel_y`；加载后恢复 Inspect。Script 页 `Load last`
-读取 exe 旁 `last-session.txt`。
+`.dps` 新增 `selected/sel_x/sel_y`；加载后恢复 Inspect。Script 页 Recent 列出
+`recent.txt` 最近 8 条（basename），`Load last` 读取最近路径。
 
 ![Script 会话](shot-panel-script.png)
 

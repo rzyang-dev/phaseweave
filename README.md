@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.17.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.18.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -136,7 +136,7 @@ GLSL 的条件必须是 bool（比较/逻辑结果），CPU 仍接受数值真�
 
 ## 实验保存 / 加载（M7a）
 
-Script 页新增 **Save experiment / Load experiment / Load last experiment**，使用 Windows 原生文件对话框，
+Script 页新增 **Save / Load / Load last / Recent**，使用 Windows 原生文件对话框，
 扩展名 `.dps`。保存内容：
 
 - 模型 id、轴名、轴范围；
@@ -145,7 +145,8 @@ Script 页新增 **Save experiment / Load experiment / Load last experiment**，
 - Grid/Periodic/Circle；
 - CPU/GPU 后端；
 - 视图中心/zoom；
-- 选中格（selected/sel_x/sel_y），加载后直接恢复 Inspect。
+- 选中格（selected/sel_x/sel_y），加载后直接恢复 Inspect；
+- 最近实验记录在 `recent.txt`（最多 8 条）。
 
 文件是简单的行格式：
 
@@ -169,7 +170,8 @@ param.r=3.7
 .\dist\dp-phase\dp-phase.exe /shot out.bmp /load session.dps
 ```
 
-`Load last` 从 exe 旁的 `last-session.txt` 恢复最近一次路径；`Save/Load` 会更新它。
+`Recent` 下拉列出 exe 旁 `recent.txt` 中最近 8 个实验（显示 basename），`Open` 加载选中项；
+`Load last` 读取最近一次路径。`Save/Load` 会更新这两个文件。
 实测 `/save` 后再 `/load` 的离屏图 hash 完全一致。加载会重建 atlas/检查器，
 并刷新面板 schema；custom 模型需要当前 `experiment.lua` 仍定义它。
 
@@ -302,10 +304,10 @@ src/selftest.c      CPU 118 项；含 GPU 的 150 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出仍固定到 exe 旁 exports/。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格会话状态已完成；还缺更完整的最近文件列表/导出偏好；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验列表已完成；还缺导出偏好/分析通道；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.17.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.18.0.zip`

@@ -214,8 +214,17 @@ grid .f.nb.script.sess.load -row 0 -column 1 -sticky ew -padx {3 0}
 grid .f.nb.script.sess.last -row 1 -column 0 -columnspan 2 -sticky ew -pady {4 0}
 grid columnconfigure .f.nb.script.sess 0 -weight 1
 grid columnconfigure .f.nb.script.sess 1 -weight 1
-grid .f.nb.script.hint -row 4 -column 0 -sticky ew -pady {8 0}
-grid .f.nb.script.ch -row 5 -column 0 -sticky ew -pady {8 0}
+ttk::frame .f.nb.script.recent
+grid .f.nb.script.recent -row 4 -column 0 -sticky ew -pady {8 0}
+ttk::label .f.nb.script.recent.l -text "Recent" -font DpSmall -anchor w
+ttk::combobox .f.nb.script.recent.combo -state readonly -width 30 -takefocus 0
+ttk::button .f.nb.script.recent.open -text "Open" -command {act open_recent [lindex $::recent_paths [expr {[.f.nb.script.recent.combo current] < 0 ? 0 : [.f.nb.script.recent.combo current]}]]} -takefocus 0
+grid .f.nb.script.recent.l -row 0 -column 0 -sticky w
+grid .f.nb.script.recent.open -row 0 -column 1 -sticky e -padx {6 0}
+grid .f.nb.script.recent.combo -row 1 -column 0 -columnspan 2 -sticky ew -pady {3 0}
+grid columnconfigure .f.nb.script.recent 0 -weight 1
+grid .f.nb.script.hint -row 5 -column 0 -sticky ew -pady {8 0}
+grid .f.nb.script.ch -row 6 -column 0 -sticky ew -pady {8 0}
 
 # --------------------------------------------------------------- status bar
 ttk::frame .f.stat
@@ -265,7 +274,19 @@ proc draw_colorbar {} {
     .f.nb.view.cbar.max configure -text [format "%.4g%s" $mx $unit]
 }
 
+proc update_recent {} {
+    if {[catch {set paths [dp_query recent]}]} { return }
+    set labels {}
+    foreach p $paths { lappend labels [file tail $p] }
+    set ::recent_paths $paths
+    .f.nb.script.recent.combo configure -values $labels
+    if {[llength $labels] > 0 && [.f.nb.script.recent.combo current] < 0} {
+        .f.nb.script.recent.combo current 0
+    }
+}
+
 proc update_ui {} {
+    update_recent
     if {$::busy} return
     set ::busy 1
     array unset ::s
@@ -307,6 +328,7 @@ proc model_changed {} {
 }
 
 proc rebuild_schema {} {
+    update_recent
     set ::model_ids {}
     set ::model_labels {}
     foreach m [dp_query models] {
@@ -399,7 +421,7 @@ proc preset {which} {
 proc act {name {value ""}} {
     set m [call $name $value]
     if {$m ne ""} { set ::last $m }
-    if {$name eq "reload" || $name eq "model_set" || $name eq "load_experiment" || $name eq "reload_last_session"} { rebuild_schema }
+    if {$name eq "reload" || $name eq "model_set" || $name eq "load_experiment" || $name eq "reload_last_session" || $name eq "open_recent"} { rebuild_schema }
     focus .
     update_ui
 }

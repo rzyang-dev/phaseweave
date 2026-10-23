@@ -74,6 +74,8 @@ struct App {
     char     hot_path[MAX_PATH];
     char     title[512];
     char     last_session[MAX_PATH];
+    char     recent[8][MAX_PATH];
+    int      nrecent;
     float   *overlay;
     int      overlay_cap;
 };
@@ -508,14 +510,38 @@ static int app_export_csv(App *a)
 }
 
 
+static int app_is_recent(App *a, const char *path)
+{
+    int i;
+    for (i = 0; i < a->nrecent; ++i)
+        if (strcmp(a->recent[i], path) == 0) return 1;
+    return 0;
+}
+
 static void app_remember_session(App *a, const char *path)
 {
     char dir[MAX_PATH], cfg[MAX_PATH];
+    char tmp[8][MAX_PATH];
     FILE *f;
-    if (!a || !path) return;
+    int i, n = 0;
+    if (!a || !path || !path[0]) return;
     strncpy(a->last_session, path, sizeof(a->last_session) - 1);
-    a->last_session[sizeof(a->last_session) - 1] = 0;
+    strncpy(tmp[n++], path, MAX_PATH - 1);
+    for (i = 0; i < a->nrecent && n < 8; ++i)
+        if (strcmp(a->recent[i], path) != 0)
+            strncpy(tmp[n++], a->recent[i], MAX_PATH - 1);
+    for (i = 0; i < n; ++i) {
+        strncpy(a->recent[i], tmp[i], MAX_PATH - 1);
+        a->recent[i][MAX_PATH - 1] = 0;
+    }
+    a->nrecent = n;
     platform_exe_dir(dir, sizeof(dir));
+    snprintf(cfg, sizeof(cfg), "%s\\recent.txt", dir);
+    f = fopen(cfg, "wb");
+    if (f) {
+        for (i = 0; i < n; ++i) fprintf(f, "%s\n", a->recent[i]);
+        fclose(f);
+    }
     snprintf(cfg, sizeof(cfg), "%s\\last-session.txt", dir);
     f = fopen(cfg, "wb");
     if (f) {
@@ -530,15 +556,24 @@ static void app_read_recent(App *a)
     FILE *f;
     if (!a) return;
     platform_exe_dir(dir, sizeof(dir));
-    snprintf(cfg, sizeof(cfg), "%s\\last-session.txt", dir);
+    snprintf(cfg, sizeof(cfg), "%s\\recent.txt", dir);
     f = fopen(cfg, "rb");
+    if (!f) {
+        snprintf(cfg, sizeof(cfg), "%s\\last-session.txt", dir);
+        f = fopen(cfg, "rb");
+    }
     if (!f) return;
-    if (fgets(buf, sizeof(buf), f)) {
+    while (a->nrecent < 8 && fgets(buf, sizeof(buf), f)) {
         size_t n = strlen(buf);
         while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
-        if (buf[0]) strncpy(a->last_session, buf, sizeof(a->last_session) - 1);
+        if (!buf[0] || app_is_recent(a, buf)) continue;
+        strncpy(a->recent[a->nrecent], buf, MAX_PATH - 1);
+        a->recent[a->nrecent][MAX_PATH - 1] = 0;
+        a->nrecent++;
     }
     fclose(f);
+    if (a->nrecent > 0)
+        strncpy(a->last_session, a->recent[0], sizeof(a->last_session) - 1);
 }
 
 static int app_save_session(App *a, const char *path)
@@ -851,6 +886,10 @@ static int app_do_action(App *a, const char *name, const char *value)
         app_set_title(a, 1);
         return 1;
     }
+    if (strcmp(name, "open_recent") == 0 && value && value[0]) {
+        app_load_session(a, value);
+        return 1;
+    }
     if (strcmp(name, "reload_last_session") == 0) {
         if (!a->last_session[0]) { app_set_last(a, "no recent session in this run"); return 1; }
         app_load_session(a, a->last_session);
@@ -1035,6 +1074,9 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
             n += snprintf(out + n, outsz - n, "  %s = %.6g %s\n",
                           ci.label, a->sel_ch[k], ci.unit);
         }
+    } else if (strcmp(what, "recent") == 0) {
+        for (i = 0; i < a->nrecent; ++i)
+            append_list(out, outsz, "{%s} ", a->recent[i]);
     } else if (strcmp(what, "source") == 0) {
         append_list(out, outsz, "%s", a->hot_path[0] ? a->hot_path : "(none)");
     } else if (strcmp(what, "title") == 0) {
