@@ -460,14 +460,35 @@ static int app_export_path(App *a, const char *ext, char *out, size_t outsz)
     return 1;
 }
 
+static int app_export_dialog(App *a, const char *def, const char *ext,
+                                const char *filter, char *out, size_t outsz)
+{
+    OPENFILENAMEA ofn;
+    if (!a || !a->plat || !def || !out || outsz == 0) return 0;
+    memset(&ofn, 0, sizeof(ofn));
+    strncpy(out, def, outsz - 1);
+    out[outsz - 1] = 0;
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = platform_hwnd(a->plat);
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = out;
+    ofn.nMaxFile = (DWORD)outsz;
+    ofn.lpstrDefExt = ext;
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameA(&ofn)) { app_set_last(a, "export canceled"); return 0; }
+    return 1;
+}
+
 static int app_export_png(App *a)
 {
-    char path[MAX_PATH], err[256];
+    char path[MAX_PATH], def[MAX_PATH], err[256];
     int res, scale, x, y, dx, dy;
     const unsigned char *src;
     unsigned char *big = NULL;
     if (!a || !a->atlas) { app_set_last(a, "export: no atlas"); return 0; }
-    if (!app_export_path(a, "png", path, sizeof(path))) return 0;
+    if (!app_export_path(a, "png", def, sizeof(def))) return 0;
+    if (!app_export_dialog(a, def, "png", "PNG image (*.png)\0*.png\0All files (*.*)\0*.*\0",
+                           path, sizeof(path))) return 0;
     res = atlas_res(a->atlas);
     scale = dp_clampi(a->exp.export_scale, 1, 4);
     src = atlas_rgba(a->atlas);
@@ -494,11 +515,13 @@ static int app_export_png(App *a)
 
 static int app_export_csv(App *a)
 {
-    char path[MAX_PATH];
+    char path[MAX_PATH], def[MAX_PATH];
     FILE *f;
     int x, y, i;
     if (!a || !a->atlas) { app_set_last(a, "export: no atlas"); return 0; }
-    if (!app_export_path(a, "csv", path, sizeof(path))) return 0;
+    if (!app_export_path(a, "csv", def, sizeof(def))) return 0;
+    if (!app_export_dialog(a, def, "csv", "CSV table (*.csv)\0*.csv\0All files (*.*)\0*.*\0",
+                           path, sizeof(path))) return 0;
     f = fopen(path, "wb");
     if (!f) { app_set_last(a, "export: cannot create csv"); return 0; }
     fprintf(f, "model,ix,iy,x_%s,y_%s",

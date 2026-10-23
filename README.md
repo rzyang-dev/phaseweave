@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.20.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.21.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -180,7 +180,7 @@ param.r=3.7
 ## 导出偏好
 
 - PNG 导出分辨率可选 **1x/2x/4x**，最近邻放大，不重新采样模型；
-- 导出仍写到 `<exe>\exports\atlas-YYYYMMDD-HHMMSS.png/.csv`；
+- 导出使用原生 **Save As**，默认路径是 `<exe>\exports\atlas-YYYYMMDD-HHMMSS.png/.csv`；
 - CSV 在 `post=ftle` 时追加 `ftle` 列；
 - 偏好保存在 `.dps` 的 `export_scale`。
 
@@ -241,7 +241,7 @@ FTLE 在 atlas reset 后缓存，参数/轴变化才重算；播放时不会每�
 - Export PNG：把当前 CPU 颜色化的 atlas 写成 8-bit RGBA PNG；
 - Export CSV：每格一行，列为
   `model,ix,iy,x_<axis>,y_<axis>,state_<...>,ch_<...>`；
-- 导出目录是 exe 旁的 `exports/`，文件名带时间戳；面板 Last 显示完整路径；
+- 导出默认目录是 exe 旁的 `exports/`，Save As 可改路径；面板 Last 显示完整路径；
 - 没有文件选择对话框，PNG 只包含 atlas，不包含面板/叠加线。
 
 ## 通道与后处理
@@ -326,12 +326,12 @@ src/selftest.c      CPU 122 项；含 GPU 的 154 项
 1. Lua 自定义模型支持 map/ODE、控制流、CPU+GLSL；所有模型已有 GPU；还缺地图轴刻度。
 2. GPU compute atlas 覆盖所有内置模型 + Lua custom；CPU 仍是回退/验证基线。
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
-4. 实验保存/加载已有；PNG/CSV 导出仍固定到 exe 旁 exports/。
+4. 实验保存/加载已有；PNG/CSV 导出默认在 exe 旁 exports/，可 Save As。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出缩放已完成；还缺盆地/逃逸时间；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出缩放/Save As 已完成；还缺盆地/逃逸时间；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.20.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.21.0.zip`

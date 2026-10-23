@@ -178,7 +178,7 @@ View 页有当前通道的颜色条（调色板 LUT 采样 + 模型范围/单位
 
 Export PNG 写当前 CPU 颜色化的 RGBA8 atlas（最小 zlib PNG writer，不写叠加线/面板）；
 Export CSV 每格一行，列名前缀 `x_`/`y_`/`state_`/`ch_`，避免不同模型的同名通道冲突。
-文件写入 exe 旁的 `exports/`，带时间戳；没有文件选择对话框。
+文件默认写入 exe 旁的 `exports/`，带时间戳；Save As 可选择路径。
 
 ## 10. 面板
 
@@ -208,8 +208,8 @@ Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
 
 ## 10b. 导出偏好
 
-PNG 支持 1x/2x/4x 最近邻放大；CSV 在 ftle 模式追加 ftle 列；`export_scale` 存入 .dps。
-导出路径仍固定到 exe 旁 exports/。
+PNG/CSV 使用原生 Save As（默认 exe 旁 exports/）；PNG 支持 1x/2x/4x 最近邻放大；
+CSV 在 ftle 模式追加 ftle 列；`export_scale` 存入 .dps。
 
 ## 10c. FTLE 分析
 
@@ -255,7 +255,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 25 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.9 MB，exe 约 433 KB。
+zip 约 3.9 MB，exe 约 434 KB。
 
 ## 13. 物理与数值边界
 

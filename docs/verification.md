@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (25 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (432,640 bytes)
+OK -> dist/dp-phase/dp-phase.exe (433,664 bytes)
       staged 10.2 MB
-      dist/dp-phase-1.20.0.zip (4.1 MB)
+      dist/dp-phase-1.21.0.zip (4.1 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 432,640 B |
+| exe | 433,664 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -144,7 +144,7 @@ model,ix,iy,x_theta1,y_theta2,state_theta1,state_theta2,...,ch_theta1,ch_theta2,
 ```
 
 PNG 是 zlib 压缩的最小 RGBA writer；CSV 列有 `x_`/`y_`/`state_`/`ch_` 前缀，
-避免模型同名通道混淆。导出固定到 exe 旁 `exports/`，面板 Last 显示路径。
+避免模型同名通道混淆。导出使用 Save As，默认 exe 旁 `exports/`，面板 Last 显示路径。
 
 - X/Y 轴 combo；
 - 范围、Res、dt、Steps/frame；
