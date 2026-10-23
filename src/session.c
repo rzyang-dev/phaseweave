@@ -33,6 +33,7 @@ int session_save(const char *path, const Experiment *e, const PhaseView *v,
     else if (e->post == 6) post = "final";
     else if (e->post == 7) post = "basin";
     else if (e->post == 8) post = "cluster";
+    else if (e->post == 9) post = "converge";
     f = fopen(path, "wb");
     if (!f) { if (err) snprintf(err, errsz, "cannot create %s", path); return 0; }
     fprintf(f, "DPEXPERIMENT 1\n");

@@ -128,6 +128,7 @@ void atlas_reset(Atlas *a, const Experiment *e)
     else if (e->post == 6) atlas_compute_final(a, e);
     else if (e->post == 7) atlas_compute_basin(a, e);
     else if (e->post == 8) atlas_compute_cluster(a, e);
+    else if (e->post == 9) atlas_compute_converge(a, e);
 }
 
 static void atlas_band(void *user, int y0, int y1)
@@ -167,7 +168,7 @@ void atlas_step(Atlas *a, const Experiment *e, int steps)
 
 static double post_value(Atlas *a, int ch, int cyclic, int x, int y, int post)
 {
-    if (post >= 4 && post <= 8) {
+    if (post >= 4 && post <= 9) {
         int cx = x < 0 ? 0 : (x >= a->res ? a->res - 1 : x);
         int cy = y < 0 ? 0 : (y >= a->res ? a->res - 1 : y);
         return a->analysis[(size_t)cy * a->res + cx];
@@ -236,8 +237,12 @@ void atlas_colorize(Atlas *a, const Experiment *e, const unsigned char *lut)
     if (e->post == 6 && (!a->analysis_valid || a->analysis_mode != 3)) atlas_compute_final(a, e);
     if (e->post == 7 && (!a->analysis_valid || a->analysis_mode != 4)) atlas_compute_basin(a, e);
     if (e->post == 8 && (!a->analysis_valid || a->analysis_mode != 5)) atlas_compute_cluster(a, e);
+    if (e->post == 9 && (!a->analysis_valid || a->analysis_mode != 6)) atlas_compute_converge(a, e);
 
-    if (e->post == 8) {
+    if (e->post == 9) {
+        pmin = 0.0; pmax = 1.0;
+        a->post_min = 0.0; a->post_max = 1.0;
+    } else if (e->post == 8) {
         int kk = e->cluster_k;
         if (kk < 2) kk = 2;
         if (kk > 16) kk = 16;
@@ -276,10 +281,11 @@ void atlas_colorize(Atlas *a, const Experiment *e, const unsigned char *lut)
                     if (kk < 2) kk = 2;
                     if (kk > 16) kk = 16;
                     u = (v + 0.5) / (double)kk;
-                } else u = (v - pmin) / (pmax - pmin);
+                } else if (e->post == 9) u = (v > 0.5) ? 0.75 : 0.25;
+                else u = (v - pmin) / (pmax - pmin);
             }
             if (!(u == u)) u = 0.0;
-            if (ci.cyclic && e->post != 7 && e->post != 8) u = u - floor(u);
+            if (ci.cyclic && e->post != 7 && e->post != 8 && e->post != 9) u = u - floor(u);
             else if (u < 0.0) u = 0.0;
             else if (u > 1.0) u = 1.0;
             {
@@ -538,5 +544,42 @@ int atlas_compute_cluster(Atlas *a, const Experiment *e)
     a->analysis_valid = 1;
     a->analysis_mode = 5;
     free(pts); free(cx); free(cy); free(labels); free(counts);
+    return 1;
+}
+int atlas_compute_converge(Atlas *a, const Experiment *e)
+{
+    const Model *m;
+    int x, y, steps, dim, k, w;
+    if (!a || !e || !e->mdl || !a->analysis) return 0;
+    a->analysis_valid = 1;
+    a->analysis_mode = 6;
+    m = e->mdl;
+    steps = e->max_steps > 0 ? e->max_steps : 1;
+    dim = m->state_dim > 0 ? m->state_dim : 1;
+    if (dim > MODEL_MAX_STATE) dim = MODEL_MAX_STATE;
+    w = steps / 4;
+    if (w < 1) w = 1;
+    for (y = 0; y < a->res; ++y) {
+        for (x = 0; x < a->res; ++x) {
+            float *c = a->cells_data + (size_t)(y * a->res + x) * (4u + MODEL_MAX_PARAMS);
+            double state[MODEL_MAX_STATE], vals[MODEL_MAX_PARAMS];
+            double mid[MODEL_MAX_STATE];
+            double dist = 0.0;
+            int converged;
+            for (k = 0; k < MODEL_MAX_STATE; ++k) state[k] = c[k];
+            for (k = 0; k < MODEL_MAX_PARAMS; ++k) vals[k] = c[MODEL_MAX_STATE + k];
+            if (steps > w) m->step(m, state, vals, e->dt, steps - w);
+            for (k = 0; k < MODEL_MAX_STATE; ++k) mid[k] = state[k];
+            m->step(m, state, vals, e->dt, w);
+            for (k = 0; k < dim; ++k) {
+                double d = state[k] - mid[k];
+                if (strcmp(m->id, "double_pendulum") == 0 && k < 2) d = wrap_diff(state[k], mid[k]);
+                dist += d * d;
+            }
+            dist = sqrt(dist);
+            converged = (dist < 1e-6) ? 1 : 0;
+            a->analysis[(size_t)(y * a->res + x)] = (float)converged;
+        }
+    }
     return 1;
 }

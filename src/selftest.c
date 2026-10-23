@@ -656,6 +656,26 @@ static void test_cluster(void)
     atlas_destroy(a);
 }
 
+static void test_converge(void)
+{
+    Experiment e;
+    Atlas *a;
+    char err[512];
+    int i, yes = 0;
+    printf("-- convergence\n");
+    exp_init(&e, &LOGISTIC_MODEL);
+    e.res = 16;
+    e.max_steps = 32;
+    a = atlas_create(&e, 16, err, sizeof(err));
+    check(a != NULL, "converge atlas creation");
+    if (!a) return;
+    check(atlas_compute_converge(a, &e) == 1, "converge compute");
+    for (i = 0; i < 16 * 16; ++i)
+        if (atlas_analysis_data(a)[i] > 0.5f) yes++;
+    check(yes > 0, "converge finds fixed cells");
+    atlas_destroy(a);
+}
+
 static void test_fortran(void)
 {
     DpConfig cfg = test_cfg(24);
@@ -1250,6 +1270,7 @@ int dp_selftest(int with_gpu)
     test_final();
     test_basin();
     test_cluster();
+    test_converge();
     test_fortran();
     test_timing();
     test_lua();
