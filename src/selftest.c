@@ -609,6 +609,29 @@ static void test_final(void)
     atlas_destroy(a);
 }
 
+static void test_basin(void)
+{
+    Experiment e;
+    Atlas *a;
+    char err[512];
+    int i, bins[8] = {0}, distinct = 0;
+    printf("-- basin bins\n");
+    exp_init(&e, &HENON_MODEL);
+    e.res = 16;
+    e.max_steps = 8;
+    a = atlas_create(&e, 16, err, sizeof(err));
+    check(a != NULL, "basin atlas creation");
+    if (!a) return;
+    check(atlas_compute_basin(a, &e) == 1, "basin compute");
+    for (i = 0; i < 16 * 16; ++i) {
+        int b = (int)atlas_analysis_data(a)[i];
+        if (b >= 0 && b < 8) bins[b]++;
+    }
+    for (i = 0; i < 8; ++i) if (bins[i] > 0) distinct++;
+    check(distinct > 1, "basin uses multiple bins");
+    atlas_destroy(a);
+}
+
 static void test_fortran(void)
 {
     DpConfig cfg = test_cfg(24);
@@ -1201,6 +1224,7 @@ int dp_selftest(int with_gpu)
     test_ftle();
     test_escape();
     test_final();
+    test_basin();
     test_fortran();
     test_timing();
     test_lua();

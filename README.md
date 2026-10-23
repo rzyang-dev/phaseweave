@@ -24,7 +24,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.26.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.27.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -250,6 +250,20 @@ Hénon 的 final 图在逃逸角落会显示不同终态。
 
 ![final](docs/shot-final.png)
 
+## 吸引子分箱 / basin
+
+View 下拉的 **basin** 把最终状态量化为 **8 个离散 bin**：
+
+- 双摆：最终 theta1 归一化后 8 个扇区；
+- Logistic：最终 x ∈ [0,1] 分 8 箱；
+- Hénon / Standard / custom：最终 `atan2(y, x)` 的 8 个扇区；
+- 颜色走离散 LUT，不做连续插值；
+- 结果缓存，reset/参数/轴变化重算。
+
+这是“最终状态分箱”的 basin 近似，不是按吸引子做 k-means/收敛聚类。
+
+![basin](docs/shot-basin.png)
+
 ## 地图刻度
 
 地图窗口在底边/左边绘制 min/mid/max 数字刻度与短 tick；顶部左右直接画
@@ -269,7 +283,7 @@ Hénon 的 final 图在逃逸角落会显示不同终态。
 
 ![模型面板](docs/shot-panel.png)
 
-**View**：Model、Color by、View（raw/gradient/range/variance/ftle/escape/**final**）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV；PNG 旁边的 `1x/2x/4x` 控制最近邻放大，CSV 在 ftle 模式多一列 `ftle`。地图边缘有数字刻度（min/mid/max），顶部直接画 X/Y 轴名；范围在面板读数里。
+**View**：Model、Color by、View（raw/gradient/range/variance/ftle/escape/final/**basin**）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV；PNG 旁边的 `1x/2x/4x` 控制最近邻放大，CSV 在 ftle 模式多一列 `ftle`。地图边缘有数字刻度（min/mid/max），顶部直接画 X/Y 轴名；范围在面板读数里。
 
 **Parameters**：X/Y 轴、范围、Res、dt、Steps/frame、模型参数、Apply parameters。
 面板高度按屏幕自适应（1080p 下 620 客户区），双摆 10 个参数能完整显示。
@@ -360,13 +374,13 @@ src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 130 项；含 GPU 的 166 项
+src/selftest.c      CPU 133 项；含 GPU 的 169 项
 ```
 
 ## 验证
 
-- `/selftest`：**130/130**
-- `/gpu-selftest`：**166/166**
+- `/selftest`：**133/133**
+- `/gpu-selftest`：**169/169**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
@@ -377,10 +391,10 @@ src/selftest.c      CPU 130 项；含 GPU 的 166 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出默认在 exe 旁 exports/，可 Save As。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、escape、final 状态、导出、Standard map 已完成；还缺严格吸引子聚类；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、escape、final、basin 分箱、导出、Standard map 已完成；还缺严格吸引子聚类；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.26.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.27.0.zip`
