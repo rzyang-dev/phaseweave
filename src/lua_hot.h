@@ -30,6 +30,9 @@ int     lua_hot_defaults(LuaHot *h, DpConfig *cfg, char *err, size_t errsz);
 int     lua_hot_palette(LuaHot *h, unsigned char *lut, char *err, size_t errsz);
 int     lua_hot_params(LuaHot *h, DpParams *p, int *max_steps, char *err, size_t errsz);
 int     lua_hot_tick(LuaHot *h, double dt, int *steps, char *err, size_t errsz);
+int     lua_hot_status(LuaHot *h, int *paused, char *scheme, size_t scheme_sz,
+                       char *err, size_t errsz);
+int     lua_hot_set_scheme(LuaHot *h, const char *name, char *err, size_t errsz);
 int     lua_hot_key(LuaHot *h, const char *name, int down, char *action, size_t action_sz,
                     char *err, size_t errsz);
 int     lua_hot_title(LuaHot *h, int fps, int steps, char *out, size_t out_sz,

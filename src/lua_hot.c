@@ -385,6 +385,57 @@ int lua_hot_tick(LuaHot *h, double dt, int *steps, char *err, size_t errsz)
     return 1;
 }
 
+int lua_hot_status(LuaHot *h, int *paused, char *scheme, size_t scheme_sz,
+                   char *err, size_t errsz)
+{
+    lua_State *L;
+    if (paused) *paused = 0;
+    if (scheme && scheme_sz) scheme[0] = 0;
+    if (!h) return 0;
+    L = h->L;
+    if (!push_hot(h, "status")) {
+        set_err(err, errsz, "hot.status is missing");
+        return 0;
+    }
+    if (lua_pcall(L, 0, 2, 0) != 0) {
+        set_err(err, errsz, "hot.status: %s", lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
+        lua_pop(L, 1);
+        return 0;
+    }
+    if (paused) *paused = lua_toboolean(L, -2) ? 1 : 0;
+    if (scheme && scheme_sz) {
+        const char *s = lua_tostring(L, -1);
+        if (s) {
+            strncpy(scheme, s, scheme_sz - 1);
+            scheme[scheme_sz - 1] = 0;
+        }
+    }
+    lua_pop(L, 2);
+    return 1;
+}
+
+int lua_hot_set_scheme(LuaHot *h, const char *name, char *err, size_t errsz)
+{
+    lua_State *L;
+    int ok = 0;
+    if (!h || !name) return 0;
+    L = h->L;
+    if (!push_hot(h, "set_scheme")) {
+        set_err(err, errsz, "hot.set_scheme is missing");
+        return 0;
+    }
+    lua_pushstring(L, name);
+    if (lua_pcall(L, 1, 1, 0) != 0) {
+        set_err(err, errsz, "hot.set_scheme: %s", lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
+        lua_pop(L, 1);
+        return 0;
+    }
+    ok = lua_toboolean(L, -1) ? 1 : 0;
+    lua_pop(L, 1);
+    if (!ok) set_err(err, errsz, "unknown palette: %s", name);
+    return ok;
+}
+
 int lua_hot_key(LuaHot *h, const char *name, int down, char *action, size_t action_sz,
                 char *err, size_t errsz)
 {

@@ -2,6 +2,7 @@
 #include "gpu.h"
 
 #include "gl43.h"
+#include "phase_view.h"
 #include "shaders_gen.h"
 
 #include <stdio.h>
@@ -16,6 +17,8 @@ struct Gpu {
     int   legacy;
     int   vsync;
     int   res;
+    double range;
+    int   field_filter;
     int   swap_ok;
     int   gl12;
     DpGl43 gl;
@@ -29,9 +32,14 @@ struct Gpu {
     GLuint legacy_tex;
     int    legacy_tex_res;
 
+    GLuint line_prog;
+    GLuint line_vao;
+    GLuint line_vbo;
+
     GLint u_res, u_steps;
     GLint u_m1, u_m2, u_l1, u_l2, u_g, u_damp, u_dt;
     GLint u_field, u_lut;
+    GLint u_center, u_span, u_range_min, u_range, u_periodic;
 
     char version[160];
     char renderer[160];
@@ -63,7 +71,8 @@ static int load_gl(Gpu *g, char *missing, size_t missz)
     LOAD_GL(CreateProgram);     LOAD_GL(AttachShader);     LOAD_GL(LinkProgram);
     LOAD_GL(GetProgramiv);      LOAD_GL(GetProgramInfoLog);LOAD_GL(UseProgram);
     LOAD_GL(DeleteProgram);     LOAD_GL(GetUniformLocation); LOAD_GL(Uniform1i);
-    LOAD_GL(Uniform1f);
+    LOAD_GL(Uniform1f);          LOAD_GL(Uniform2f);
+    LOAD_GL(EnableVertexAttribArray); LOAD_GL(VertexAttribPointer);
     LOAD_GL(GenBuffers);        LOAD_GL(BindBuffer);       LOAD_GL(BufferData);
     LOAD_GL(BufferSubData);     LOAD_GL(GetBufferSubData); LOAD_GL(DeleteBuffers);
     LOAD_GL(BindBufferBase);
@@ -154,11 +163,15 @@ void gpu_set_res(Gpu *g, int res)
     g->gl.GenTextures(1, &g->field_tex);
     g->gl.BindTexture(GL_TEXTURE_2D, g->field_tex);
     g->gl.TexStorage2D(GL_TEXTURE_2D, 1, DP_GL_R32F, res, res);
-    g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    /* 低分辨率下必须最近邻：线性过滤会把每个 texel 与邻居混合，
+     * 64x64 放大到 512x512 时整幅图会变成糊的渐变。 */
+    g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    /* 循环视图靠 shader 的 fract() 平铺，纹理本身用 REPEAT 更稳。 */
+    g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     g->gl.BindImageTexture(0, g->field_tex, 0, GL_FALSE, 0, DP_GL_READ_WRITE, DP_GL_R32F);
+    g->field_filter = GL_NEAREST;
 
     if (!g->vao) {
         g->gl.GenVertexArrays(1, &g->vao);
@@ -166,6 +179,11 @@ void gpu_set_res(Gpu *g, int res)
     }
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
+}
+
+void gpu_set_range(Gpu *g, double range)
+{
+    if (g && range > 1e-9) g->range = range;
 }
 
 void gpu_set_lut(Gpu *g, const unsigned char *lut)
@@ -256,8 +274,8 @@ void gpu_upload_rgba_legacy(Gpu *g, const unsigned char *rgba, int res)
         if (!g->legacy_tex) glGenTextures(1, &g->legacy_tex);
         glBindTexture(GL_TEXTURE_2D, g->legacy_tex);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, res, res, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, g->gl12 ? GL_CLAMP_TO_EDGE : GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, g->gl12 ? GL_CLAMP_TO_EDGE : GL_CLAMP);
         g->legacy_tex_res = res;
@@ -267,27 +285,33 @@ void gpu_upload_rgba_legacy(Gpu *g, const unsigned char *rgba, int res)
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, res, res, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 }
 
-void gpu_draw(Gpu *g, int w, int h)
+static void draw_modern_view(Gpu *g, const PhaseView *v)
 {
-    if (!g || w <= 0 || h <= 0) return;
-    glViewport(0, 0, w, h);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    double span = g->range / (v->zoom > 0.0 ? v->zoom : 1.0);
+    g->gl.UseProgram(g->draw_prog);
+    g->gl.ActiveTexture(GL_TEXTURE0 + 1);
+    g->gl.BindTexture(GL_TEXTURE_2D, g->lut_tex);
+    g->gl.Uniform1i(g->u_lut, 1);
+    g->gl.ActiveTexture(GL_TEXTURE0);
+    g->gl.BindTexture(GL_TEXTURE_2D, g->field_tex);
+    g->gl.Uniform1i(g->u_field, 0);
+    g->gl.Uniform2f(g->u_center, (GLfloat)v->cx, (GLfloat)v->cy);
+    setf(g, g->u_span, (float)span);
+    setf(g, g->u_range_min, (float)(-g->range * 0.5));
+    setf(g, g->u_range, (float)g->range);
+    g->gl.Uniform1i(g->u_periodic, v->periodic ? 1 : 0);
+    g->gl.BindVertexArray(g->vao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+}
 
-    if (g->modern) {
-        g->gl.UseProgram(g->draw_prog);
-        g->gl.ActiveTexture(GL_TEXTURE0 + 1);
-        g->gl.BindTexture(GL_TEXTURE_2D, g->lut_tex);
-        g->gl.Uniform1i(g->u_lut, 1);
-        g->gl.ActiveTexture(GL_TEXTURE0);
-        g->gl.BindTexture(GL_TEXTURE_2D, g->field_tex);
-        g->gl.Uniform1i(g->u_field, 0);
-        g->gl.BindVertexArray(g->vao);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-        return;
-    }
+static void draw_legacy_view(Gpu *g, const PhaseView *v)
+{
+    double span = g->range / (v->zoom > 0.0 ? v->zoom : 1.0);
+    double half = span * 0.5;
+    double rmin = -g->range * 0.5, rmax = g->range * 0.5;
+    double x0 = v->cx - half, x1 = v->cx + half;
+    double y0 = v->cy - half, y1 = v->cy + half;
 
-    /* 兼容路径：GL 1.1 固定管线，一张 RGBA 纹理铺满窗口。 */
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glMatrixMode(GL_PROJECTION);
@@ -296,16 +320,113 @@ void gpu_draw(Gpu *g, int w, int h)
     glLoadIdentity();
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, g->legacy_tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
     glBegin(GL_QUADS);
-    glTexCoord2f(0.0f, 1.0f); glVertex2f(-1.0f, -1.0f);
-    glTexCoord2f(1.0f, 1.0f); glVertex2f( 1.0f, -1.0f);
-    glTexCoord2f(1.0f, 0.0f); glVertex2f( 1.0f,  1.0f);
-    glTexCoord2f(0.0f, 0.0f); glVertex2f(-1.0f,  1.0f);
+    if (v->periodic) {
+        double u0 = (x0 - rmin) / g->range;
+        double u1 = (x1 - rmin) / g->range;
+        double v0 = (y0 - rmin) / g->range;
+        double v1 = (y1 - rmin) / g->range;
+        glTexCoord2d(u0, v0); glVertex2f(-1.0f,  1.0f);
+        glTexCoord2d(u1, v0); glVertex2f( 1.0f,  1.0f);
+        glTexCoord2d(u1, v1); glVertex2f( 1.0f, -1.0f);
+        glTexCoord2d(u0, v1); glVertex2f(-1.0f, -1.0f);
+    } else {
+        double fx0 = x0 > rmin ? x0 : rmin;
+        double fx1 = x1 < rmax ? x1 : rmax;
+        double fy0 = y0 > rmin ? y0 : rmin;
+        double fy1 = y1 < rmax ? y1 : rmax;
+        if (fx1 > fx0 && fy1 > fy0) {
+            float nx0 = (float)((fx0 - v->cx) / half);
+            float nx1 = (float)((fx1 - v->cx) / half);
+            float ny0 = (float)(-(fy0 - v->cy) / half);
+            float ny1 = (float)(-(fy1 - v->cy) / half);
+            double u0 = (fx0 - rmin) / g->range;
+            double u1 = (fx1 - rmin) / g->range;
+            double v0 = (fy0 - rmin) / g->range;
+            double v1 = (fy1 - rmin) / g->range;
+            glTexCoord2d(u0, v0); glVertex2f(nx0, ny0);
+            glTexCoord2d(u1, v0); glVertex2f(nx1, ny0);
+            glTexCoord2d(u1, v1); glVertex2f(nx1, ny1);
+            glTexCoord2d(u0, v1); glVertex2f(nx0, ny1);
+        }
+    }
     glEnd();
     glDisable(GL_TEXTURE_2D);
 }
+
+void gpu_draw_view(Gpu *g, int w, int h, const PhaseView *v)
+{
+    if (!g || !v || w <= 0 || h <= 0) return;
+    glViewport(0, 0, w, h);
+    glClearColor(0.035f, 0.045f, 0.055f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    if (g->modern) draw_modern_view(g, v);
+    else if (g->legacy) draw_legacy_view(g, v);
+}
+
+void gpu_draw(Gpu *g, int w, int h)
+{
+    PhaseView v;
+    pv_init(&v);
+    v.grid = 0;
+    v.circle = 0;
+    v.periodic = 0;
+    v.zoom = 1.0;
+    v.cx = 0.0;
+    v.cy = 0.0;
+    gpu_draw_view(g, w, h, &v);
+}
+
+void gpu_draw_lines(Gpu *g, const float *verts, int nverts, float width)
+{
+    int i;
+    if (!g || !verts || nverts <= 0) return;
+    if (g->modern) {
+        if (!g->line_prog || !g->line_vao || !g->line_vbo) return;
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glLineWidth(width);
+        g->gl.UseProgram(g->line_prog);
+        g->gl.BindVertexArray(g->line_vao);
+        g->gl.BindBuffer(GL_ARRAY_BUFFER, g->line_vbo);
+        g->gl.BufferData(GL_ARRAY_BUFFER, (ptrdiff_t)nverts * 6 * (ptrdiff_t)sizeof(float),
+                         verts, DP_GL_STREAM_DRAW);
+        glDrawArrays(GL_LINES, 0, nverts);
+        glLineWidth(1.0f);
+        glDisable(GL_BLEND);
+        return;
+    }
+    if (g->legacy) {
+        glDisable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glLineWidth(width);
+        glBegin(GL_LINES);
+        for (i = 0; i < nverts; ++i) {
+            const float *t = verts + i * 6;
+            glColor4f(t[2], t[3], t[4], t[5]);
+            glVertex2f(t[0], t[1]);
+        }
+        glEnd();
+        glLineWidth(1.0f);
+        glDisable(GL_BLEND);
+    }
+}
+
+int gpu_read_cell(Gpu *g, int index, float out[4])
+{
+    if (!g || !g->modern || !out || index < 0 || index >= g->res * g->res) return 0;
+    g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->ssbo);
+    g->gl.GetBufferSubData(DP_GL_SHADER_STORAGE_BUFFER, (ptrdiff_t)index * 16, 16, out);
+    return 1;
+}
+
+int gpu_field_filter(Gpu *g) { return g ? g->field_filter : 0; }
 
 int gpu_read_field(Gpu *g, float *field, int res)
 {
@@ -424,6 +545,25 @@ static int build_modern(Gpu *g, char *err, size_t errsz)
         g->draw_prog = link_program(g, vs, fs, "display program", err, errsz);
         if (!g->draw_prog) return 0;
     }
+    {
+        GLuint vs = compile_shader(g, DP_GL_VERTEX_SHADER, DP_SHADER_LINE_VERT,
+                                   "line.vert", err, errsz);
+        GLuint fs;
+        if (!vs) return 0;
+        fs = compile_shader(g, DP_GL_FRAGMENT_SHADER, DP_SHADER_LINE_FRAG,
+                            "line.frag", err, errsz);
+        if (!fs) { g->gl.DeleteShader(vs); return 0; }
+        g->line_prog = link_program(g, vs, fs, "line program", err, errsz);
+        if (!g->line_prog) return 0;
+    }
+    g->gl.GenVertexArrays(1, &g->line_vao);
+    g->gl.BindVertexArray(g->line_vao);
+    g->gl.GenBuffers(1, &g->line_vbo);
+    g->gl.BindBuffer(GL_ARRAY_BUFFER, g->line_vbo);
+    g->gl.EnableVertexAttribArray(0);
+    g->gl.VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 24, (const void *)0);
+    g->gl.EnableVertexAttribArray(1);
+    g->gl.VertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 24, (const void *)8);
 
     g->u_res  = g->gl.GetUniformLocation(g->comp_prog, "uRes");
     g->u_steps= g->gl.GetUniformLocation(g->comp_prog, "uSteps");
@@ -436,7 +576,14 @@ static int build_modern(Gpu *g, char *err, size_t errsz)
     g->u_dt   = g->gl.GetUniformLocation(g->comp_prog, "uDt");
     g->u_field= g->gl.GetUniformLocation(g->draw_prog, "uField");
     g->u_lut  = g->gl.GetUniformLocation(g->draw_prog, "uLut");
-    if (g->u_res < 0 || g->u_steps < 0 || g->u_field < 0 || g->u_lut < 0) {
+    g->u_center = g->gl.GetUniformLocation(g->draw_prog, "uCenter");
+    g->u_span = g->gl.GetUniformLocation(g->draw_prog, "uSpan");
+    g->u_range_min = g->gl.GetUniformLocation(g->draw_prog, "uRangeMin");
+    g->u_range = g->gl.GetUniformLocation(g->draw_prog, "uRange");
+    g->u_periodic = g->gl.GetUniformLocation(g->draw_prog, "uPeriodic");
+    if (g->u_res < 0 || g->u_steps < 0 || g->u_field < 0 || g->u_lut < 0 ||
+        g->u_center < 0 || g->u_span < 0 || g->u_range_min < 0 ||
+        g->u_range < 0 || g->u_periodic < 0) {
         snprintf(err, errsz, "shader uniforms were optimized out");
         return 0;
     }
@@ -463,6 +610,8 @@ Gpu *gpu_create(HWND hwnd, HDC hdc, int force_legacy, char *err, size_t errsz)
     if (!g) return NULL;
     g->hwnd = hwnd;
     g->hdc = hdc;
+    g->range = 4.0 * DP_PI;
+    g->field_filter = GL_NEAREST;
 
     memset(&pfd, 0, sizeof(pfd));
     pfd.nSize = sizeof(pfd);
@@ -546,7 +695,10 @@ void gpu_destroy(Gpu *g)
         if (g->lut_tex) g->gl.DeleteTextures(1, &g->lut_tex);
         if (g->comp_prog) g->gl.DeleteProgram(g->comp_prog);
         if (g->draw_prog) g->gl.DeleteProgram(g->draw_prog);
+        if (g->line_prog) g->gl.DeleteProgram(g->line_prog);
+        if (g->line_vbo) g->gl.DeleteBuffers(1, &g->line_vbo);
         if (g->vao) g->gl.DeleteVertexArrays(1, &g->vao);
+        if (g->line_vao) g->gl.DeleteVertexArrays(1, &g->line_vao);
     }
     if (g->legacy_tex) glDeleteTextures(1, &g->legacy_tex);
     if (g->rc) {

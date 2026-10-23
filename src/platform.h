@@ -5,10 +5,25 @@
 #include <windows.h>
 
 typedef struct Platform Platform;
-typedef void (*PlatformKeyFn)(void *user, int vk, int down);
+
+/* 输入事件：KEY(a=vk,b=down)、MOUSE_DOWN/MOUSE_UP(a=0 左/1 右,b=x,c=y)、
+ * MOUSE_MOVE(a=x,b=y)、WHEEL(a=delta,b=x,c=y)。 */
+enum {
+    DP_EV_KEY = 1,
+    DP_EV_MOUSE_DOWN,
+    DP_EV_MOUSE_UP,
+    DP_EV_MOUSE_MOVE,
+    DP_EV_WHEEL
+};
+typedef struct {
+    int type;
+    int a, b, c;
+} DpEvent;
+typedef void (*PlatformEventFn)(void *user, const DpEvent *ev);
 
 Platform *platform_create(HINSTANCE inst, const wchar_t *title, int client_side,
-                          int hidden, void *user, PlatformKeyFn keyfn);
+                          int hidden, void *user, PlatformEventFn eventfn);
+void      platform_move_client(Platform *p, int x, int y);
 void      platform_destroy(Platform *p);
 
 void      platform_pump(Platform *p);

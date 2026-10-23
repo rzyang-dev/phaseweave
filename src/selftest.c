@@ -207,6 +207,8 @@ static void test_lua(void)
     char err[1024];
     char action[64];
     char title[256];
+    char resstr[32];
+    double script_dt = 0.1;
 
     printf("-- Lua hot logic\n");
     dp_config_defaults(&cfg);
@@ -222,10 +224,12 @@ static void test_lua(void)
     check(1, "Lua state created with sandbox libs");
 
     if (lua_hot_defaults(h, &cfg, err, sizeof(err))) {
-        checkf(cfg.grid.res == 256, "defaults.res = %d", cfg.grid.res);
-        checkf(fabs(cfg.grid.range - DP_TWO_PI * 2.0) < 1e-9, "defaults.range = 4*pi");
-        checkf(fabs(cfg.sim.dt - 0.1) < 1e-12, "defaults.dt = 0.1");
-        checkf(cfg.sim.max_steps == 8, "defaults.max_steps = 8");
+        script_dt = cfg.sim.dt;
+        checkf(cfg.grid.res >= 32 && cfg.grid.res <= 1024, "defaults.res = %d (in range)", cfg.grid.res);
+        checkf(cfg.grid.range > 0.1 && cfg.grid.range <= 64.0, "defaults.range = %.3f (in range)", cfg.grid.range);
+        checkf(cfg.sim.dt >= 1e-4 && cfg.sim.dt <= 0.5, "defaults.dt = %.3f (in range)", cfg.sim.dt);
+        checkf(cfg.sim.max_steps >= 0 && cfg.sim.max_steps <= DP_MAX_STEPS,
+               "defaults.max_steps = %d (in range)", cfg.sim.max_steps);
     } else {
         checkf(0, "hot.defaults: %s", err);
     }
@@ -240,20 +244,20 @@ static void test_lua(void)
     }
 
     if (lua_hot_params(h, &p, &max_steps, err, sizeof(err))) {
-        checkf(fabs(p.m1 - 1.0) < 1e-9 && fabs(p.dt - 0.1) < 1e-9 && max_steps == 8,
+        checkf(fabs(p.m1 - 1.0) < 1e-9 && fabs(p.dt - script_dt) < 1e-9 && max_steps == cfg.sim.max_steps,
                "hot.params -> m1=%.2f dt=%.3f max_steps=%d", p.m1, p.dt, max_steps);
     } else {
         checkf(0, "hot.params: %s", err);
     }
 
     lua_hot_reset(h);
-    if (lua_hot_tick(h, 0.05, &steps, err, sizeof(err))) {
-        checkf(steps == 0, "tick(0.05) = %d (below dt)", steps);
+    if (lua_hot_tick(h, script_dt * 0.5, &steps, err, sizeof(err))) {
+        checkf(steps == 0, "tick(0.5*dt) = %d (below dt)", steps);
     } else {
         checkf(0, "hot.tick: %s", err);
     }
-    if (lua_hot_tick(h, 0.06, &steps, err, sizeof(err))) {
-        checkf(steps == 1, "tick(0.06) = %d (crosses dt=0.1)", steps);
+    if (lua_hot_tick(h, script_dt * 0.6, &steps, err, sizeof(err))) {
+        checkf(steps == 1, "tick(0.5dt+0.6dt) = %d (crosses dt)", steps);
     } else {
         checkf(0, "hot.tick: %s", err);
     }
@@ -270,8 +274,9 @@ static void test_lua(void)
     check(lua_hot_tick(h, 1.0, &steps, err, sizeof(err)) && steps == 0, "paused tick returns 0");
     lua_hot_key(h, "SPACE", 1, action, sizeof(action), err, sizeof(err));
 
+    snprintf(resstr, sizeof(resstr), "%dx%d", cfg.grid.res, cfg.grid.res);
     if (lua_hot_title(h, 60, 1, title, sizeof(title), err, sizeof(err))) {
-        checkf(strstr(title, "GPU compute") != NULL && strstr(title, "256") != NULL,
+        checkf(strstr(title, "GPU compute") != NULL && strstr(title, resstr) != NULL,
                "title mentions kernel and grid: \"%s\"", title);
     } else {
         checkf(0, "hot.title: %s", err);

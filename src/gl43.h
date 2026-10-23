@@ -23,6 +23,10 @@
 #define DP_GL_RGBA8                         0x8058
 #define DP_GL_READ_WRITE                    0x88BA
 #define DP_GL_DYNAMIC_DRAW                  0x88E8
+#define DP_GL_STREAM_DRAW                   0x88E0
+#ifndef GL_ARRAY_BUFFER
+#define GL_ARRAY_BUFFER                     0x8892
+#endif
 #define DP_GL_FRAMEBUFFER                   0x8D40
 #define DP_GL_COLOR_ATTACHMENT0             0x8CE0
 #define DP_GL_FRAMEBUFFER_COMPLETE          0x8CD5
@@ -63,6 +67,7 @@ typedef struct {
     GLint  (APIENTRY *GetUniformLocation)(GLuint program, const char *name);
     void   (APIENTRY *Uniform1i)(GLint location, GLint v0);
     void   (APIENTRY *Uniform1f)(GLint location, GLfloat v0);
+    void   (APIENTRY *Uniform2f)(GLint location, GLfloat v0, GLfloat v1);
 
     void   (APIENTRY *GenBuffers)(GLsizei n, GLuint *buffers);
     void   (APIENTRY *BindBuffer)(GLenum target, GLuint buffer);
@@ -88,6 +93,9 @@ typedef struct {
 
     void   (APIENTRY *BindImageTexture)(GLuint unit, GLuint texture, GLint level, GLboolean layered,
                                         GLint layer, GLenum access, GLenum format);
+    void   (APIENTRY *EnableVertexAttribArray)(GLuint index);
+    void   (APIENTRY *VertexAttribPointer)(GLuint index, GLint size, GLenum type,
+                                           GLboolean normalized, GLsizei stride, const void *pointer);
     void   (APIENTRY *DispatchCompute)(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z);
     void   (APIENTRY *MemoryBarrier)(GLbitfield barriers);
 

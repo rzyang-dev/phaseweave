@@ -24,7 +24,7 @@ struct Platform {
     double    tprev;
     double    tframe;
     void     *user;
-    PlatformKeyFn keyfn;
+    PlatformEventFn eventfn;
 };
 
 static const wchar_t *kClass = L"DPPhaseWindow";
@@ -73,15 +73,76 @@ static LRESULT CALLBACK platform_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         return 0;
     case WM_DPICHANGED:
         return 0;
+    case WM_SETCURSOR:
+        if (LOWORD(lp) == HTCLIENT) {
+            SetCursor(LoadCursorW(NULL, (LPCWSTR)IDC_CROSS));
+            return TRUE;
+        }
+        return DefWindowProcW(hwnd, msg, wp, lp);
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
-        if (p && p->keyfn && (lp & (1L << 30)) == 0)
-            p->keyfn(p->user, (int)wp, 1);
+        if (p && p->eventfn && (lp & (1L << 30)) == 0) {
+            DpEvent ev;
+            ev.type = DP_EV_KEY; ev.a = (int)wp; ev.b = 1; ev.c = 0;
+            p->eventfn(p->user, &ev);
+        }
         return 0;
     case WM_KEYUP:
     case WM_SYSKEYUP:
-        if (p && p->keyfn)
-            p->keyfn(p->user, (int)wp, 0);
+        if (p && p->eventfn) {
+            DpEvent ev;
+            ev.type = DP_EV_KEY; ev.a = (int)wp; ev.b = 0; ev.c = 0;
+            p->eventfn(p->user, &ev);
+        }
+        return 0;
+    case WM_LBUTTONDOWN:
+    case WM_RBUTTONDOWN:
+        if (p && p->eventfn) {
+            DpEvent ev;
+            ev.type = DP_EV_MOUSE_DOWN;
+            ev.a = (msg == WM_LBUTTONDOWN) ? 0 : 1;
+            ev.b = (short)LOWORD(lp);
+            ev.c = (short)HIWORD(lp);
+            SetFocus(hwnd);
+            if (ev.a == 0) SetCapture(hwnd);
+            p->eventfn(p->user, &ev);
+        }
+        return 0;
+    case WM_LBUTTONUP:
+    case WM_RBUTTONUP:
+        if (p && p->eventfn) {
+            DpEvent ev;
+            ev.type = DP_EV_MOUSE_UP;
+            ev.a = (msg == WM_LBUTTONUP) ? 0 : 1;
+            ev.b = (short)LOWORD(lp);
+            ev.c = (short)HIWORD(lp);
+            if (ev.a == 0) ReleaseCapture();
+            p->eventfn(p->user, &ev);
+        }
+        return 0;
+    case WM_MOUSEMOVE:
+        if (p && p->eventfn) {
+            DpEvent ev;
+            ev.type = DP_EV_MOUSE_MOVE;
+            ev.a = (short)LOWORD(lp);
+            ev.b = (short)HIWORD(lp);
+            ev.c = 0;
+            p->eventfn(p->user, &ev);
+        }
+        return 0;
+    case WM_MOUSEWHEEL:
+        if (p && p->eventfn) {
+            POINT pt;
+            DpEvent ev;
+            pt.x = (short)LOWORD(lp);
+            pt.y = (short)HIWORD(lp);
+            ScreenToClient(hwnd, &pt);
+            ev.type = DP_EV_WHEEL;
+            ev.a = GET_WHEEL_DELTA_WPARAM(wp);
+            ev.b = pt.x;
+            ev.c = pt.y;
+            p->eventfn(p->user, &ev);
+        }
         return 0;
     default:
         return DefWindowProcW(hwnd, msg, wp, lp);
@@ -105,7 +166,7 @@ static void register_class(HINSTANCE inst)
 }
 
 Platform *platform_create(HINSTANCE inst, const wchar_t *title, int client_side,
-                          int hidden, void *user, PlatformKeyFn keyfn)
+                          int hidden, void *user, PlatformEventFn eventfn)
 {
     Platform *p;
     LARGE_INTEGER f;
@@ -121,7 +182,7 @@ Platform *platform_create(HINSTANCE inst, const wchar_t *title, int client_side,
     if (!p) return NULL;
     p->inst = inst;
     p->user = user;
-    p->keyfn = keyfn;
+    p->eventfn = eventfn;
     p->hidden = hidden;
     QueryPerformanceFrequency(&f);
     p->freq = (double)f.QuadPart;
@@ -248,6 +309,18 @@ void platform_set_title(Platform *p, const char *utf8)
     if (!p || !p->hwnd) return;
     utf8_to_wide(utf8, wide, 512);
     SetWindowTextW(p->hwnd, wide);
+}
+
+void platform_move_client(Platform *p, int x, int y)
+{
+    RECT rc;
+    if (!p || !p->hwnd) return;
+    rc.left = 0; rc.top = 0;
+    rc.right = p->width; rc.bottom = p->height;
+    AdjustWindowRectEx(&rc, (DWORD)GetWindowLongW(p->hwnd, GWL_STYLE), FALSE,
+                       (DWORD)GetWindowLongW(p->hwnd, GWL_EXSTYLE));
+    SetWindowPos(p->hwnd, NULL, x - rc.left, y - rc.top, 0, 0,
+                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 HWND platform_hwnd(Platform *p) { return p ? p->hwnd : NULL; }

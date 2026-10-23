@@ -17,13 +17,13 @@ M.cfg = {
         damping = 0.0,
     },
     grid = {
-        res = 64,
-        range = 2 * math.pi,
+        res = 256,
+        range = 4 * math.pi,
         omega1 = 0.0,
         omega2 = 0.0,
     },
     sim = {
-        dt = 0.01,
+        dt = 0.1,
         max_steps = 8,
         threads = 0,          -- 0 = 用满逻辑核
     },
@@ -118,6 +118,20 @@ function M.reset()
     M.acc = 0
 end
 
+function M.status()
+    return M.paused, M.scheme
+end
+
+function M.set_scheme(name)
+    for _, s in ipairs(M.schemes) do
+        if s == name then
+            M.scheme = s
+            return true
+        end
+    end
+    return false
+end
+
 function M.key(name, down)
     if not down then return nil end
     if name == "R" then
@@ -144,7 +158,7 @@ function M.title(kernel, fps, steps)
     local label = (kernel == "gpu") and "GPU compute" or "Fortran CPU"
     local state = M.scheme
     if M.paused then state = state .. " | paused" end
-    return string.format("Double Pendulum Phase Space | %s | %d fps | %dx%d | %s",
+    return string.format("Phase Space | %s | %d fps | %dx%d | %s",
                          label, fps, M.cfg.grid.res, M.cfg.grid.res, state)
 end
 

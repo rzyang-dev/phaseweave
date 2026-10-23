@@ -3,6 +3,7 @@
 #define DP_GPU_H
 
 #include "core.h"
+#include "phase_view.h"
 #include <windows.h>
 
 typedef struct Gpu Gpu;
@@ -17,6 +18,7 @@ int  gpu_vsync(Gpu *g);
 int  gpu_res(Gpu *g);
 
 void gpu_set_res(Gpu *g, int res);
+void gpu_set_range(Gpu *g, double range);
 void gpu_set_lut(Gpu *g, const unsigned char *lut);
 int  gpu_upload_state(Gpu *g, const float *state, int res);
 int  gpu_download_state(Gpu *g, float *state, int res);
@@ -24,6 +26,10 @@ void gpu_step(Gpu *g, int steps, const DpParams *p);
 void gpu_upload_field(Gpu *g, const float *field, int res);
 void gpu_upload_rgba_legacy(Gpu *g, const unsigned char *rgba, int res);
 void gpu_draw(Gpu *g, int w, int h);
+void gpu_draw_view(Gpu *g, int w, int h, const PhaseView *view);
+void gpu_draw_lines(Gpu *g, const float *verts, int nverts, float width);
+int  gpu_read_cell(Gpu *g, int index, float out[4]);
+int  gpu_field_filter(Gpu *g);
 int  gpu_read_field(Gpu *g, float *field, int res);
 int  gpu_capture_rgba(Gpu *g, int w, int h, unsigned char *out_topdown);
 int  gpu_capture_offscreen(Gpu *g, int w, int h, unsigned char *out_topdown);
