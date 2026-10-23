@@ -14,6 +14,8 @@ typedef struct {
     const char *capture_path;
     int capture_steps;
     const char *model;
+    const char *load_path;
+    const char *save_path;
     const char *axis_x;
     const char *axis_y;
     const char *channel;

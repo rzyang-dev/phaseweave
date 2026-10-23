@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.10.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.11.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -117,6 +117,45 @@ CPU/GPU 长时间混沌轨道会因精度分叉。
 
 ![Lua 表达式面板](docs/shot-custom-panel.png)
 
+## 实验保存 / 加载（M7a）
+
+Script 页新增 **Save experiment / Load experiment**，使用 Windows 原生文件对话框，
+扩展名 `.dps`。保存内容：
+
+- 模型 id、轴名、轴范围；
+- 所有参数值；
+- res/dt/steps、通道、后处理、palette；
+- Grid/Periodic/Circle；
+- CPU/GPU 后端；
+- 视图中心/zoom。
+
+文件是简单的行格式：
+
+```text
+DPEXPERIMENT 1
+model=logistic
+axis_x=r
+axis_y=x0
+xmin=0
+xmax=4
+res=32
+param.r=3.7
+...
+```
+
+命令行也可用：
+
+```powershell
+.\dist\dp-phase\dp-phase.exe /save session.dps
+.\dist\dp-phase\dp-phase.exe /load session.dps
+.\dist\dp-phase\dp-phase.exe /shot out.bmp /load session.dps
+```
+
+实测 `/save` 后再 `/load` 的离屏图 hash 完全一致。加载会重建 atlas/检查器，
+并刷新面板 schema；custom 模型需要当前 `experiment.lua` 仍定义它。
+
+![Script 页](docs/shot-panel-script.png)
+
 ## 模型选择与面板
 
 面板标题下是 **Model** 下拉框：
@@ -206,6 +245,7 @@ src/model_dp.c      双摆 ODE
 src/model_logistic.c Logistic map + Lyapunov
 src/model_henon.c   Hénon map
 src/expr.c/h        表达式 → postfix bytecode + GLSL 生成
+src/session.c/h     .dps 实验保存/加载
 src/model_custom.c/h Lua 表达式 2D map
 src/experiment.c/h  模型无关的轴/范围/通道 schema + Lua metadata 应用
 src/schema.h        Lua↔Experiment 的 schema 元数据
@@ -218,13 +258,13 @@ src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 100 项；含 GPU 的 115 项
+src/selftest.c      CPU 107 项；含 GPU 的 122 项
 ```
 
 ## 验证
 
-- `/selftest`：**100/100**
-- `/gpu-selftest`：**115/115**
+- `/selftest`：**107/107**
+- `/gpu-selftest`：**122/122**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
@@ -233,12 +273,12 @@ src/selftest.c      CPU 100 项；含 GPU 的 115 项
 1. Lua 2D map 已生成 CPU 字节码和 GLSL，GPU atlas 已接自定义模型；还没有控制流/ODE 与全模型 GPU。
 2. GPU compute atlas 目前只支持 Lua 自定义模型；双摆/Logistic/Hénon 走 CPU。
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
-4. 没有文件选择对话框、实验保存/加载；导出固定到 exe 旁 exports/。
+4. 实验保存/加载已有；PNG/CSV 导出仍固定到 exe 旁 exports/。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 没有 3D 切片/分岔连续化；目标是 2D 地图，不是 AUTO/MatCont 替代品。
+6. 还没有控制流/ODE 表达式、全模型 GPU、地图边缘轴刻度；目标是 2D 地图，不是 AUTO/MatCont。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.10.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.11.0.zip`

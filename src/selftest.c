@@ -10,6 +10,7 @@
 #include "lua_hot.h"
 #include "model_custom.h"
 #include "phase_view.h"
+#include "session.h"
 #include "physics.h"
 #include "platform.h"
 #include "sim.h"
@@ -427,6 +428,44 @@ static void test_expressions_and_custom(void)
 
     lua_hot_destroy(h);
     platform_free(src);
+}
+
+static void test_session(void)
+{
+    Experiment e;
+    PhaseView v;
+    SessionData s;
+    char dir[MAX_PATH], path[MAX_PATH];
+    char err[512];
+    printf("-- experiment session\n");
+    exp_init(&e, &DP_MODEL);
+    e.res = 32;
+    exp_set_axis(&e, 0, "m1");
+    exp_set_axis(&e, 1, "m2");
+    exp_set_range(&e, 0, 0.5, 2.0);
+    exp_set_range(&e, 1, 0.5, 2.0);
+    exp_set_value(&e, "theta1", 0.7);
+    e.channel = 2;
+    e.post = 2;
+    strcpy(e.palette, "ember");
+    e.grid = 1; e.periodic = 1; e.circle = 0;
+    pv_init(&v); v.cx = 0.1; v.cy = -0.2; v.zoom = 2.0;
+    GetTempPathA(sizeof(dir), dir);
+    snprintf(path, sizeof(path), "%sdp-session-test.dps", dir);
+    check(session_save(path, &e, &v, 1, err, sizeof(err)) == 1, "session save");
+    check(session_load(path, &s, err, sizeof(err)) == 1, "session load");
+    check(strcmp(s.model, "double_pendulum") == 0 && s.backend_gpu == 1,
+          "session model/backend roundtrip");
+    check(strcmp(s.axis_x, "m1") == 0 && fabs(s.xmax - 2.0) < 1e-12,
+          "session axes/ranges roundtrip");
+    check(s.res == 32 && fabs(s.dt - 0.01) < 1e-12 && s.steps == 8,
+          "session integration roundtrip");
+    check(strcmp(s.channel, "energy") == 0 && strcmp(s.post, "range") == 0,
+          "session channel/post roundtrip");
+    check(s.periodic == 1 && s.circle == 0 &&
+          fabs(s.view_cx - 0.1) < 1e-12 && fabs(s.view_zoom - 2.0) < 1e-12,
+          "session view/toggles roundtrip");
+    DeleteFileA(path);
 }
 
 static void test_fortran(void)
@@ -948,6 +987,7 @@ int dp_selftest(int with_gpu)
     test_maps();
     test_schema();
     test_expressions_and_custom();
+    test_session();
     test_fortran();
     test_timing();
     test_lua();

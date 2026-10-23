@@ -69,6 +69,8 @@ static void usage(void)
     printf("  dp-phase.exe /gpu-selftest                   self-test + GPU compute check\n");
     printf("  dp-phase.exe /shot out.bmp [/cpu|/gpu] [/res N] [/steps N]\n");
     printf("  dp-phase.exe /capture out.bmp [/size N] [/steps N] [/cpu|/gpu] [/legacy]\n");
+    printf("  dp-phase.exe /load session.dps\n");
+    printf("  dp-phase.exe /save session.dps\n");
     printf("  dp-phase.exe /shot out.bmp /model logistic /axisx r /axisy x0 /channel lyapunov\n");
     printf("  dp-phase.exe /shot out.bmp /axisx m1 /axisy m2 /channel energy /post range /set theta1=0.5\n\n");
     printf("  in the window:  R reset   Space pause   C palette   K GPU/CPU   F5 reload hot.lua   Esc quit\n");
@@ -129,6 +131,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
             opt.window_side = atoi(argv[++i]);
         } else if (ieq(a, "/model") && i + 1 < argc) {
             opt.model = argv[++i];
+        } else if (ieq(a, "/load") && i + 1 < argc) {
+            opt.load_path = argv[++i];
+        } else if (ieq(a, "/save") && i + 1 < argc) {
+            opt.save_path = argv[++i];
         } else if (ieq(a, "/axisx") && i + 1 < argc) {
             opt.axis_x = argv[++i];
         } else if (ieq(a, "/axisy") && i + 1 < argc) {

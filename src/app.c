@@ -13,6 +13,9 @@
 #include "physics.h"
 #include "png.h"
 #include "platform.h"
+#include "session.h"
+
+#include <commdlg.h>
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -102,6 +105,10 @@ static void app_colorize(App *a);
 static int  app_apply_schema(App *a, int defaults);
 static int  app_prepare_custom_gpu(App *a);
 static int  app_gpu_advance(App *a, int steps);
+static int  app_save_session(App *a, const char *path);
+static int  app_load_session(App *a, const char *path);
+static int  app_dialog_save(App *a);
+static int  app_dialog_load(App *a);
 static void app_set_model(App *a, const char *id)
 {
     const Model *m;
@@ -492,6 +499,143 @@ static int app_export_csv(App *a)
     return 1;
 }
 
+
+static int app_save_session(App *a, const char *path)
+{
+    char err[512];
+    if (!a || !path) return 0;
+    err[0] = 0;
+    if (!session_save(path, &a->exp, &a->view, a->backend_gpu, err, sizeof(err))) {
+        app_set_last(a, err[0] ? err : "save failed");
+        return 0;
+    }
+    app_set_last(a, path);
+    return 1;
+}
+
+static int app_load_session(App *a, const char *path)
+{
+    SessionData s;
+    const Model *m;
+    char err[512];
+    int i, ax, ay;
+    if (!a || !path) return 0;
+    err[0] = 0;
+    if (!session_load(path, &s, err, sizeof(err))) {
+        app_set_last(a, err[0] ? err : "load failed");
+        return 0;
+    }
+    if (strcmp(s.model, "custom") == 0 && !a->has_custom) {
+        app_set_last(a, "load: custom model is not defined in experiment.lua");
+        return 0;
+    }
+    m = app_resolve_model(a, s.model);
+    if (!m) { app_set_last(a, "load: unknown model"); return 0; }
+    if (a->pview) { pendulum_view_destroy(a->pview); a->pview = NULL; }
+    exp_init(&a->exp, m);
+    if (a->lua) app_apply_schema(a, 1);
+    for (i = 0; i < s.nparams; ++i) {
+        int idx = exp_index(&a->exp, s.params[i].name);
+        double v;
+        ExpParam *p;
+        if (idx < 0) continue;
+        p = &a->exp.p[idx];
+        v = s.params[i].value;
+        if (v < p->min) v = p->min;
+        if (v > p->max) v = p->max;
+        p->value = v;
+    }
+    ax = exp_index(&a->exp, s.axis_x);
+    ay = exp_index(&a->exp, s.axis_y);
+    if (ax >= 0 && ay >= 0 && ax != ay &&
+        a->exp.p[ax].axis_ok && a->exp.p[ay].axis_ok) {
+        a->exp.axis_x = ax;
+        a->exp.axis_y = ay;
+    }
+    if (s.xmax > s.xmin) { a->exp.xmin = s.xmin; a->exp.xmax = s.xmax; }
+    if (s.ymax > s.ymin) { a->exp.ymin = s.ymin; a->exp.ymax = s.ymax; }
+    a->exp.res = dp_clampi(s.res, 16, 512);
+    a->exp.dt = s.dt > 0.0 ? s.dt : 0.01;
+    a->exp.max_steps = dp_clampi(s.steps, 0, 256);
+    a->exp.grid = s.grid;
+    a->exp.periodic = s.periodic;
+    a->exp.circle = s.circle;
+    a->exp.channel = 0;
+    for (i = 0; i < a->exp.nch; ++i)
+        if (strcmp(exp_channel_name(&a->exp, i), s.channel) == 0) a->exp.channel = i;
+    a->exp.post = 0;
+    if (strcmp(s.post, "gradient") == 0) a->exp.post = 1;
+    else if (strcmp(s.post, "range") == 0) a->exp.post = 2;
+    else if (strcmp(s.post, "variance") == 0) a->exp.post = 3;
+    if (s.palette[0]) strncpy(a->exp.palette, s.palette, sizeof(a->exp.palette) - 1);
+    if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, a->exp.palette, NULL, 0);
+    a->selected = -1;
+    pv_reset(&a->view);
+    a->view.cx = s.view_cx;
+    a->view.cy = s.view_cy;
+    a->view.zoom = s.view_zoom >= 0.25 ? s.view_zoom : 1.0;
+    if (a->atlas) atlas_destroy(a->atlas);
+    a->atlas = atlas_create(&a->exp, a->exp.res, err, sizeof(err));
+    if (!a->atlas) { app_set_last(a, err[0] ? err : "atlas creation failed"); return 0; }
+    a->backend_gpu = s.backend_gpu ? 1 : 0;
+    if (strcmp(a->exp.model, "custom") == 0) {
+        app_prepare_custom_gpu(a);
+        if (!a->gpu_custom_ok) a->backend_gpu = 0;
+    } else {
+        a->backend_gpu = 0;
+    }
+    app_load_palette(a);
+    app_colorize(a);
+    app_read_selected(a);
+    a->acc = 0.0;
+    a->steps_last = 0;
+    if (a->plat && !a->opt.capture_path && a->right_x > 0 &&
+        strcmp(a->exp.model, "double_pendulum") == 0) {
+        a->pview = pendulum_view_create(a->inst, L"Double Pendulum",
+                                        a->right_x, 16, a->right_w, a->pend_h,
+                                        a, app_pend_close, app_pend_key);
+    }
+    app_set_title(a, 1);
+    app_set_last(a, path);
+    return 1;
+}
+
+static int app_dialog_save(App *a)
+{
+    char file[MAX_PATH];
+    OPENFILENAMEA ofn;
+    if (!a || !a->plat) return 0;
+    memset(&ofn, 0, sizeof(ofn));
+    snprintf(file, sizeof(file), "experiment.dps");
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = platform_hwnd(a->plat);
+    ofn.lpstrFilter = "dp-phase experiment (*.dps)\0*.dps\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = sizeof(file);
+    ofn.lpstrDefExt = "dps";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameA(&ofn)) { app_set_last(a, "save canceled"); return 0; }
+    return app_save_session(a, file);
+}
+
+static int app_dialog_load(App *a)
+{
+    char file[MAX_PATH];
+    OPENFILENAMEA ofn;
+    if (!a || !a->plat) return 0;
+    memset(&ofn, 0, sizeof(ofn));
+    file[0] = 0;
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = platform_hwnd(a->plat);
+    ofn.lpstrFilter = "dp-phase experiment (*.dps)\0*.dps\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = sizeof(file);
+    ofn.lpstrDefExt = "dps";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (!GetOpenFileNameA(&ofn)) { app_set_last(a, "load canceled"); return 0; }
+    return app_load_session(a, file);
+}
+
 static int app_do_action(App *a, const char *name, const char *value)
 {
     if (!a || !name) return 0;
@@ -661,6 +805,8 @@ static int app_do_action(App *a, const char *name, const char *value)
         app_set_title(a, 1);
         return 1;
     }
+    if (strcmp(name, "save_experiment") == 0) { app_dialog_save(a); return 1; }
+    if (strcmp(name, "load_experiment") == 0) { app_dialog_load(a); return 1; }
     if (strcmp(name, "export_png") == 0) { app_export_png(a); return 1; }
     if (strcmp(name, "export_csv") == 0) { app_export_csv(a); return 1; }
     if (strcmp(name, "apply") == 0) { app_apply_experiment(a); return 1; }
@@ -1030,6 +1176,11 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
 
     a->fps_t0 = platform_now();
     app_colorize(a);
+    if (opt->load_path) {
+        if (app_load_session(a, opt->load_path) && a->panel)
+            panel_eval(a->panel, "rebuild_schema; update_ui");
+    }
+    if (opt->save_path) app_save_session(a, opt->save_path);
     app_set_last(a, "ready");
     app_set_title(a, 1);
     return a;

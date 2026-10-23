@@ -193,6 +193,18 @@ Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
 面板通过 `dp_query params|axes|channels|models|model|view|integration|palette|selected` 拉 schema，
 不把模型字段硬编码进 Tcl。
 
+## 10b. 实验保存/加载
+
+`.dps` 是行格式（`key=value`），保存模型/轴/范围/参数/res/dt/steps/通道/
+后处理/palette/Grid/Periodic/Circle/CPU-GPU 后端/视图中心与 zoom。
+
+- GUI：Script 页 Save/Load，原生 `GetSaveFileNameA/GetOpenFileNameA`；
+- CLI：`/save path`、`/load path`（可和 `/shot` 组合做回归）；
+- 加载：按 model id 重建 Experiment/Atlas/检查器，应用 schema 默认后用文件覆盖值，
+  通过 `panel_eval("rebuild_schema")` 刷新 Tcl；
+- custom 模型需要当前 Lua 仍定义它；GPU 后端请求失败自动回退 CPU。
+- 自检覆盖 save/load roundtrip；CLI save→load 的离屏图 hash 一致。
+
 ## 11. Lua schema + palette
 
 `experiments/experiment.lua` 现在同时提供 schema 元数据和调色板：
@@ -223,9 +235,9 @@ function M.schema(id) return M.models[id] end
 
 ## 12. 打包
 
-`build.ps1` 六步；C 23 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
+`build.ps1` 六步；C 24 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.7 MB，exe 约 794 KB。
+zip 约 3.7 MB，exe 约 802 KB。
 
 ## 13. 物理与数值边界
 
@@ -251,6 +263,7 @@ zip 约 3.7 MB，exe 约 794 KB。
 - M5a（已完成）：Lua 2D map 表达式 → CPU 字节码；
 - M5b（已完成）：GLSL 代码生成 + GPU 单格验证；
 - M6（已完成）：GPU compute atlas + CPU 回退（自定义模型）；
-- 后续：控制流/ODE 表达式、实验保存/加载、全模型 GPU。
+- M7a（已完成）：.dps 实验保存/加载 + 文件对话框 + CLI；
+- 后续：控制流/ODE 表达式、全模型 GPU、地图轴刻度。
 - M6：GPU compute atlas、FTLE/盆地、Poincaré、切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。

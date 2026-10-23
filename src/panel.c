@@ -228,6 +228,12 @@ void panel_pump(Panel *p)
     }
 }
 
+int panel_eval(Panel *p, const char *script)
+{
+    if (!p || !p->ip || !script) return 0;
+    return Tcl_EvalEx(p->ip, script, -1, 0) == TCL_OK;
+}
+
 void panel_destroy(Panel *p)
 {
     if (!p) return;

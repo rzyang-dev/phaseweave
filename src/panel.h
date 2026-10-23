@@ -33,5 +33,6 @@ Panel *panel_create(const PanelCallbacks *cb, const char *script_path,
                     int x, int y, int w, int h, char *err, size_t errsz);
 void   panel_pump(Panel *p);
 void   panel_destroy(Panel *p);
+int    panel_eval(Panel *p, const char *script);
 
 #endif

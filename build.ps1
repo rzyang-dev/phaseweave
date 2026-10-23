@@ -1,7 +1,7 @@
 # build.ps1 - Double Pendulum Phase Space -> dynamical-systems atlas
 #
 # Toolchain: C:\MinGW (GCC 6.3, gfortran, windres, objdump, Tcl/Tk 8.6).
-# Deliverable: dist/dp-phase/ (portable folder) + dist/dp-phase-1.10.0.zip.
+# Deliverable: dist/dp-phase/ (portable folder) + dist/dp-phase-1.11.0.zip.
 # Tcl/Tk is dynamically linked and shipped in the folder; no extraction at runtime.
 #
 #   .\build.ps1              build + self-test
@@ -109,7 +109,7 @@ $cflags = @(
     '-I', 'src', '-I', 'build\gen'
 )
 $sources = @(
-    'main.c', 'app.c', 'platform.c', 'experiment.c', 'atlas.c', 'model.c', 'model_dp.c', 'model_logistic.c', 'model_henon.c', 'expr.c', 'model_custom.c', 'sim.c', 'physics.c', 'pool.c',
+    'main.c', 'app.c', 'platform.c', 'experiment.c', 'atlas.c', 'model.c', 'model_dp.c', 'model_logistic.c', 'model_henon.c', 'expr.c', 'model_custom.c', 'session.c', 'sim.c', 'physics.c', 'pool.c',
     'kernel_fortran.c', 'lua_hot.c', 'gpu.c', 'phase_view.c', 'pendulum_view.c', 'panel.c', 'bmp.c', 'png.c', 'selftest.c'
 )
 $objects = @()
@@ -141,7 +141,7 @@ $exe = Join-Path $stage 'dp-phase.exe'
 $lflags = @(
     '-mwindows', '-static', '-static-libgcc', '-static-libgfortran',
     '-Wl,--gc-sections', '-Wl,--enable-stdcall-fixup', '-s',
-    '-lopengl32', '-lgdi32', '-luser32', '-lwinmm', '-llua', '-lz', '-lm',
+    '-lopengl32', '-lgdi32', '-luser32', '-lwinmm', '-lcomdlg32', '-llua', '-lz', '-lm',
     '-ltk86', '-ltcl86'
 )
 Invoke-Tool $fc ($objects + @('-o', $exe) + $lflags) 'link'
@@ -170,7 +170,7 @@ Copy-Item (Join-Path $root 'README.md') $stage -Force -ErrorAction SilentlyConti
 Copy-Item (Join-Path $root 'docs') (Join-Path $stage 'docs') -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ("      staged {0:N1} MB" -f ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum / 1MB))
 
-$zip = Join-Path $dist 'dp-phase-1.10.0.zip'
+$zip = Join-Path $dist 'dp-phase-1.11.0.zip'
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
 Write-Host ("      {0}  ({1:N1} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))
@@ -180,7 +180,7 @@ Write-Host '--- import table audit ---'
 $imports = & $od -p $exe | Select-String 'DLL Name:' | ForEach-Object {
     ($_ -split 'DLL Name:')[1].Trim()
 } | Sort-Object -Unique
-$allowed = @('kernel32.dll', 'user32.dll', 'gdi32.dll', 'opengl32.dll', 'winmm.dll', 'msvcrt.dll', 'tcl86.dll', 'tk86.dll')
+$allowed = @('kernel32.dll', 'user32.dll', 'gdi32.dll', 'opengl32.dll', 'winmm.dll', 'msvcrt.dll', 'tcl86.dll', 'tk86.dll', 'comdlg32.dll')
 $badImports = $false
 foreach ($dll in $imports) {
     $low = $dll.ToLower()

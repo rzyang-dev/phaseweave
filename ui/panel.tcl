@@ -204,8 +204,16 @@ ttk::label .f.nb.script.ch -text "Axes, parameters and channels are defined by t
 grid .f.nb.script.h -row 0 -column 0 -sticky ew
 grid .f.nb.script.src -row 1 -column 0 -sticky ew -pady {2 6}
 grid .f.nb.script.reload -row 2 -column 0 -sticky w
-grid .f.nb.script.hint -row 3 -column 0 -sticky ew -pady {8 0}
-grid .f.nb.script.ch -row 4 -column 0 -sticky ew -pady {8 0}
+ttk::frame .f.nb.script.sess
+grid .f.nb.script.sess -row 3 -column 0 -sticky ew -pady {8 0}
+ttk::button .f.nb.script.sess.save -text "Save experiment" -command {act save_experiment} -takefocus 0
+ttk::button .f.nb.script.sess.load -text "Load experiment" -command {act load_experiment} -takefocus 0
+grid .f.nb.script.sess.save -row 0 -column 0 -sticky ew -padx {0 3}
+grid .f.nb.script.sess.load -row 0 -column 1 -sticky ew -padx {3 0}
+grid columnconfigure .f.nb.script.sess 0 -weight 1
+grid columnconfigure .f.nb.script.sess 1 -weight 1
+grid .f.nb.script.hint -row 4 -column 0 -sticky ew -pady {8 0}
+grid .f.nb.script.ch -row 5 -column 0 -sticky ew -pady {8 0}
 
 # --------------------------------------------------------------- status bar
 ttk::frame .f.stat
@@ -389,7 +397,7 @@ proc preset {which} {
 proc act {name {value ""}} {
     set m [call $name $value]
     if {$m ne ""} { set ::last $m }
-    if {$name eq "reload" || $name eq "model_set"} { rebuild_schema }
+    if {$name eq "reload" || $name eq "model_set" || $name eq "load_experiment"} { rebuild_schema }
     focus .
     update_ui
 }
