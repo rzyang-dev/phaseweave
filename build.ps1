@@ -1,7 +1,7 @@
 # build.ps1 - Double Pendulum Phase Space -> dynamical-systems atlas
 #
 # Toolchain: C:\MinGW (GCC 6.3, gfortran, windres, objdump, Tcl/Tk 8.6).
-# Deliverable: dist/dp-phase/ (portable folder) + dist/dp-phase-1.29.0.zip.
+# Deliverable: dist/dp-phase/ (portable folder) + dist/dp-phase-1.30.0.zip.
 # Tcl/Tk is dynamically linked and shipped in the folder; no extraction at runtime.
 #
 #   .\build.ps1              build + self-test
@@ -170,7 +170,7 @@ Copy-Item (Join-Path $root 'README.md') $stage -Force -ErrorAction SilentlyConti
 Copy-Item (Join-Path $root 'docs') (Join-Path $stage 'docs') -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ("      staged {0:N1} MB" -f ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum / 1MB))
 
-$zip = Join-Path $dist 'dp-phase-1.29.0.zip'
+$zip = Join-Path $dist 'dp-phase-1.30.0.zip'
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
 Write-Host ("      {0}  ({1:N1} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))

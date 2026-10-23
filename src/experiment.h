@@ -54,6 +54,7 @@ typedef struct {
     int export_overlay; /* draw grid/ticks/selection into PNG */
     double escape_radius; /* escape post threshold */
     int cluster_k;       /* basin k-means cluster count */
+    double converge_eps; /* converge post threshold */
 
     int grid, periodic, circle;
     int selected;

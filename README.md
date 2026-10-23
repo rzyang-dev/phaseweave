@@ -24,7 +24,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.29.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.30.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -287,13 +287,16 @@ View 下拉的 **converge**：
 
 - 积分 `steps` 步；
 - 记录倒数 `steps/4` 步前与最终状态；
-- 两点距离 < `1e-6` → converged（紫），否则绿色；
+- 两点距离 < `Conv eps`（默认 1e-6）→ converged（紫），否则绿色；
 - 双摆角度差用周期差；
 - 缓存，reset/参数/轴变化重算。
 
-这是固定窗口/阈值的收敛检测，不报告收敛速度或吸引子数量。
+窗口固定为 `steps/4`，`Conv eps` 可在 Parameters 页改，并存入 `.dps`。
+这是固定窗口阈值的收敛检测，不报告收敛速度或吸引子数量。
 
 ![converge](docs/shot-converge.png)
+
+![converge 参数](docs/shot-params-converge.png)
 
 ## 地图刻度
 
@@ -422,10 +425,10 @@ src/selftest.c      CPU 139 项；含 GPU 的 175 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出默认在 exe 旁 exports/，可 Save As。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、escape、final、basin、cluster、converge、导出、Standard map 已完成；还缺 Poincaré/切片；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、escape、final、basin、cluster、可调 converge、导出、Standard map 已完成；还缺 Poincaré/切片；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.29.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.30.0.zip`

@@ -54,6 +54,7 @@ void exp_init(Experiment *e, const Model *m)
     e->export_overlay = 1;
     e->escape_radius = 10.0;
     e->cluster_k = 4;
+    e->converge_eps = 1e-6;
     e->channel = 0;
     e->post = 0;
     e->grid = 1;

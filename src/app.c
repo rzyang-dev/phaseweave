@@ -800,6 +800,7 @@ static int app_load_session(App *a, const char *path)
     a->exp.export_overlay = s.export_overlay ? 1 : 0;
     a->exp.escape_radius = s.escape_radius > 0.0 ? s.escape_radius : 10.0;
     a->exp.cluster_k = (s.cluster_k >= 2 && s.cluster_k <= 16) ? s.cluster_k : 4;
+    a->exp.converge_eps = s.converge_eps > 0.0 ? s.converge_eps : 1e-6;
     if (s.palette[0]) strncpy(a->exp.palette, s.palette, sizeof(a->exp.palette) - 1);
     if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, a->exp.palette, NULL, 0);
     a->selected = -1;
@@ -970,7 +971,6 @@ static int app_do_action(App *a, const char *name, const char *value)
         double r = atof(value);
         if (!(r > 0.0)) { app_set_last(a, "escape radius must be positive"); return 0; }
         a->exp.escape_radius = r;
-        a->exp.post = 5;
         app_apply_experiment(a);
         return 1;
     }
@@ -979,7 +979,13 @@ static int app_do_action(App *a, const char *name, const char *value)
         if (k < 2) k = 2;
         if (k > 16) k = 16;
         a->exp.cluster_k = k;
-        a->exp.post = 8;
+        app_apply_experiment(a);
+        return 1;
+    }
+    if (strcmp(name, "converge_eps_set") == 0 && value) {
+        double e = atof(value);
+        if (!(e > 0.0)) { app_set_last(a, "converge epsilon must be positive"); return 0; }
+        a->exp.converge_eps = e;
         app_apply_experiment(a);
         return 1;
     }
@@ -1230,8 +1236,9 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
         else if (a->exp.post == 9) post = "converge";
         append_list(out, outsz, "%s %s %s", exp_channel_name(&a->exp, a->exp.channel), post, a->exp.palette);
     } else if (strcmp(what, "integration") == 0) {
-        append_list(out, outsz, "%d %.9g %d %.9g %d", a->exp.res, a->exp.dt,
-                    a->exp.max_steps, a->exp.escape_radius, a->exp.cluster_k);
+        append_list(out, outsz, "%d %.9g %d %.9g %d %.9g", a->exp.res, a->exp.dt,
+                    a->exp.max_steps, a->exp.escape_radius, a->exp.cluster_k,
+                    a->exp.converge_eps);
     } else if (strcmp(what, "models") == 0) {
         for (i = 0; i < model_count(); ++i) {
             const Model *m = model_at(i);

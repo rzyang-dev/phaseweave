@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (26 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (446,976 bytes)
+OK -> dist/dp-phase/dp-phase.exe (447,488 bytes)
       staged 10.5 MB
-      dist/dp-phase-1.29.0.zip (4.3 MB)
+      dist/dp-phase-1.30.0.zip (4.3 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 446,976 B |
+| exe | 447,488 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -259,8 +259,8 @@ log(stretch)/steps；reset 后缓存，参数/轴变化重算。
 
 ## 15. converge 收敛检测
 
-converge：比较倒数 steps/4 步前与最终状态，距离<1e-6 为收敛；
-固定窗口/阈值，不报告收敛速度。
+converge：比较倒数 steps/4 步前与最终状态，距离<Conv eps（默认1e-6）为收敛；
+窗口固定，eps 可在 Parameters 改并存入 .dps；不报告收敛速度。
 
 ![converge](shot-converge.png)
 

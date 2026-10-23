@@ -519,7 +519,7 @@ static void test_session(void)
     e.channel = 2;
     e.post = 2;
     strcpy(e.palette, "ember");
-    e.grid = 1; e.periodic = 1; e.circle = 0; e.export_scale = 2; e.export_overlay = 0; e.escape_radius = 7.5; e.cluster_k = 6;
+    e.grid = 1; e.periodic = 1; e.circle = 0; e.export_scale = 2; e.export_overlay = 0; e.escape_radius = 7.5; e.cluster_k = 6; e.converge_eps = 1e-4;
     pv_init(&v); v.cx = 0.1; v.cy = -0.2; v.zoom = 2.0;
     GetTempPathA(sizeof(dir), dir);
     snprintf(path, sizeof(path), "%sdp-session-test.dps", dir);
@@ -538,7 +538,7 @@ static void test_session(void)
           "session view/toggles roundtrip");
     check(s.selected == 1 && s.sel_x == 12 && s.sel_y == 13,
           "session selected cell roundtrip");
-    check(s.export_scale == 2 && s.export_overlay == 0 && fabs(s.escape_radius - 7.5) < 1e-12 && s.cluster_k == 6,
+    check(s.export_scale == 2 && s.export_overlay == 0 && fabs(s.escape_radius - 7.5) < 1e-12 && s.cluster_k == 6 && fabs(s.converge_eps - 1e-4) < 1e-16,
           "session export scale/overlay/escape roundtrip");
     DeleteFileA(path);
 }

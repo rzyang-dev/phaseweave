@@ -214,7 +214,8 @@ CSV 在 ftle 模式追加 ftle 列；`export_scale/export_overlay` 存入 .dps�
 
 ## 10c. converge
 
-converge：倒数 steps/4 步前后状态距离<1e-6 二值化；固定窗口/阈值。
+converge：倒数 steps/4 步前后状态距离<converge_eps（默认1e-6）二值化；
+窗口固定，eps 可编辑并存入 .dps。
 
 ## 10d. k-means cluster
 

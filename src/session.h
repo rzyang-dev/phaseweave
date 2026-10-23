@@ -29,6 +29,7 @@ typedef struct {
     int export_overlay;
     double escape_radius;
     int cluster_k;
+    double converge_eps;
     double view_cx, view_cy, view_zoom;
     int nparams;
     SessionParam params[MODEL_MAX_PARAMS];

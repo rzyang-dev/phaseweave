@@ -550,9 +550,11 @@ int atlas_compute_converge(Atlas *a, const Experiment *e)
 {
     const Model *m;
     int x, y, steps, dim, k, w;
+    double eps;
     if (!a || !e || !e->mdl || !a->analysis) return 0;
     a->analysis_valid = 1;
     a->analysis_mode = 6;
+    eps = e->converge_eps > 0.0 ? e->converge_eps : 1e-6;
     m = e->mdl;
     steps = e->max_steps > 0 ? e->max_steps : 1;
     dim = m->state_dim > 0 ? m->state_dim : 1;
@@ -577,7 +579,7 @@ int atlas_compute_converge(Atlas *a, const Experiment *e)
                 dist += d * d;
             }
             dist = sqrt(dist);
-            converged = (dist < 1e-6) ? 1 : 0;
+            converged = (dist < eps) ? 1 : 0;
             a->analysis[(size_t)(y * a->res + x)] = (float)converged;
         }
     }
