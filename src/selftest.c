@@ -159,14 +159,14 @@ static void test_experiment_atlas(void)
     Experiment e;
     Atlas *a;
     char err[512];
-    double state[4], params[6];
-    float st[4], fp[6], ch[4];
+    double state[MODEL_MAX_STATE], vals[MODEL_MAX_PARAMS];
+    float st[MODEL_MAX_STATE], fp[MODEL_MAX_PARAMS], ch[MODEL_MAX_CHANNELS];
     unsigned char lut[DP_LUT_N * 3];
     unsigned int colors[64];
     int i, ncolors = 0;
 
     printf("-- experiment / atlas\n");
-    exp_init(&e);
+    exp_init(&e, &DP_MODEL);
     check(exp_index(&e, "theta1") == 0 && exp_index(&e, "m2") == 5,
           "double-pendulum schema has named parameters");
     e.res = 16;
@@ -178,8 +178,8 @@ static void test_experiment_atlas(void)
     exp_set_value(&e, "theta1", 0.5);
     exp_set_value(&e, "theta2", 0.2);
 
-    exp_cell_state(&e, 0, 0, state, params);
-    check(fabs(params[0] - 0.546875) < 1e-6 && fabs(params[1] - 0.546875) < 1e-6,
+    exp_cell_state(&e, 0, 0, state, vals);
+    check(fabs(vals[4] - 0.546875) < 1e-6 && fabs(vals[5] - 0.546875) < 1e-6,
           "mass-axis cell maps to parameter values");
     check(fabs(state[0] - 0.5) < 1e-9 && fabs(state[1] - 0.2) < 1e-9,
           "fixed angles are used when masses are axes");
@@ -191,7 +191,7 @@ static void test_experiment_atlas(void)
         e.channel = 2;
         atlas_colorize(a, &e, lut);
         atlas_read_cell(a, 0, st, fp, ch);
-        check(fabs(fp[0] - params[0]) < 1e-5 && fabs(fp[1] - params[1]) < 1e-5,
+        check(fabs(fp[4] - vals[4]) < 1e-5 && fabs(fp[5] - vals[5]) < 1e-5,
               "atlas cell preserves per-pixel masses");
         check(isfinite(ch[2]), "energy channel is finite");
         for (i = 0; i < 64; ++i) colors[i] = 0;
@@ -223,6 +223,67 @@ static void test_experiment_atlas(void)
         e1 = dp_energy(s0, &p);
         check(fabs(e1 - e0) < 1e-3 * fmax(1.0, fabs(e0)),
               "RK4 conserves energy for damping=0");
+    }
+}
+
+static void test_maps(void)
+{
+    double vals[MODEL_MAX_PARAMS];
+    double state[MODEL_MAX_STATE];
+    float ch[MODEL_MAX_CHANNELS];
+    Experiment e;
+    Atlas *a;
+    char err[512];
+    int i;
+
+    printf("-- map models\n");
+    check(model_count() == 3, "three models are registered");
+    check(model_by_id("logistic") == &LOGISTIC_MODEL, "logistic lookup");
+    check(model_by_id("henon") == &HENON_MODEL, "henon lookup");
+
+    memset(vals, 0, sizeof(vals));
+    vals[0] = 2.5; vals[1] = 0.5;
+    LOGISTIC_MODEL.init(&LOGISTIC_MODEL, vals, state);
+    LOGISTIC_MODEL.step(&LOGISTIC_MODEL, state, vals, 0.0, 2000);
+    check(fabs(state[0] - 0.6) < 1e-3, "logistic r=2.5 converges to 1-1/r");
+
+    vals[0] = 4.0; vals[1] = 0.3;
+    LOGISTIC_MODEL.init(&LOGISTIC_MODEL, vals, state);
+    LOGISTIC_MODEL.step(&LOGISTIC_MODEL, state, vals, 0.0, 1000);
+    LOGISTIC_MODEL.observe(&LOGISTIC_MODEL, state, vals, ch);
+    check(ch[0] >= 0.0f && ch[0] <= 1.0f, "logistic state stays in [0,1]");
+    check(fabs(ch[1] - 0.6931) < 0.15, "logistic r=4 Lyapunov ~= ln 2");
+
+    memset(vals, 0, sizeof(vals));
+    vals[0] = 1.4; vals[1] = 0.3; vals[2] = 0.0; vals[3] = 0.0;
+    HENON_MODEL.init(&HENON_MODEL, vals, state);
+    HENON_MODEL.step(&HENON_MODEL, state, vals, 0.0, 1000);
+    check(isfinite(state[0]) && isfinite(state[1]), "henon state is finite");
+    check(fabs(state[0]) < 2.0 && fabs(state[1]) < 1.0, "henon state stays bounded");
+    HENON_MODEL.observe(&HENON_MODEL, state, vals, ch);
+    check(ch[2] >= 0.0f && ch[2] < 3.0f, "henon radius channel");
+
+    exp_init(&e, &LOGISTIC_MODEL);
+    e.res = 16;
+    a = atlas_create(&e, e.res, err, sizeof(err));
+    check(a != NULL, "logistic atlas creation");
+    if (a) {
+        unsigned char lut[DP_LUT_N * 3];
+        unsigned int colors[128];
+        int ncolors = 0;
+        dp_phase_lut(lut);
+        e.channel = 1;
+        atlas_step(a, &e, 100);
+        atlas_colorize(a, &e, lut);
+        for (i = 0; i < 128 && ncolors < 128; ++i) {
+            const unsigned char *p = atlas_rgba(a) + (size_t)(i * 31 % (16 * 16)) * 4u;
+            unsigned int c = ((unsigned)p[0] << 16) | ((unsigned)p[1] << 8) | p[2];
+            int j, seen = 0;
+            for (j = 0; j < ncolors; ++j) if (colors[j] == c) seen = 1;
+            if (!seen) colors[ncolors++] = c;
+        }
+        check(ncolors > 1, "logistic parameter map is non-uniform");
+        atlas_destroy(a);
     }
 }
 
@@ -646,6 +707,7 @@ int dp_selftest(int with_gpu)
     test_angles();
     test_view();
     test_experiment_atlas();
+    test_maps();
     test_fortran();
     test_timing();
     test_lua();

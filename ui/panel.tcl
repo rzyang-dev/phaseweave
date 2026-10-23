@@ -2,7 +2,7 @@
 # C exposes: dp_action, dp_status, dp_query, dp_quit.
 # Parameters and axes are queried from the experiment; no Lua reload for values.
 
-if {![info exists ::panelW]} { set ::panelW 364; set ::panelH 540; set ::panelX 740; set ::panelY 340 }
+if {![info exists ::panelW]} { set ::panelW 364; set ::panelH 620; set ::panelX 740; set ::panelY 340 }
 wm title . "Control Panel"
 wm resizable . 1 1
 wm minsize . 364 420
@@ -30,13 +30,22 @@ set ::s(last) ""
 ttk::frame .f -padding {8 6 8 6}
 pack .f -fill both -expand 1
 grid columnconfigure .f 0 -weight 1
-grid rowconfigure .f 1 -weight 1
+grid rowconfigure .f 2 -weight 1
 
 ttk::label .f.title -text "Dynamical Systems Atlas" -font DpTitle -anchor w
 grid .f.title -row 0 -column 0 -sticky ew
+ttk::frame .f.mrow
+grid .f.mrow -row 1 -column 0 -sticky ew -pady {2 2}
+ttk::label .f.mrow.l -text "Model" -font DpBody -anchor w
+ttk::combobox .f.mrow.cb -state readonly -width 22 -takefocus 0
+grid .f.mrow.l -row 0 -column 0 -sticky w
+grid .f.mrow.cb -row 0 -column 1 -sticky ew
+grid columnconfigure .f.mrow 1 -weight 1
+grid columnconfigure .f 0 -weight 1
+bind .f.mrow.cb <<ComboboxSelected>> {model_changed}
 
 ttk::notebook .f.nb
-grid .f.nb -row 1 -column 0 -sticky nsew -pady {4 2}
+grid .f.nb -row 2 -column 0 -sticky nsew -pady {4 2}
 
 # ---------------------------------------------------------------- View tab
 ttk::frame .f.nb.view -padding 8
@@ -148,10 +157,10 @@ grid .f.nb.par.buttons.apply -row 0 -column 0 -sticky w
 # -------------------------------------------------------------- Script tab
 ttk::frame .f.nb.script -padding 8
 ttk::label .f.nb.script.h -text "Experiment script" -font DpHead -foreground "#555" -anchor w
-ttk::label .f.nb.script.src -text "experiments/double-pendulum.lua" -font DpSmall -foreground "#333" -anchor w -justify left -wraplength 320
+ttk::label .f.nb.script.src -text "experiments/palette.lua" -font DpSmall -foreground "#333" -anchor w -justify left -wraplength 320
 ttk::button .f.nb.script.reload -text "Reload palette (F5)" -command {act reload} -takefocus 0
 ttk::label .f.nb.script.hint -text "The model is built in for this milestone. Parameters and axes are applied from the Parameters tab; reload only refreshes the palette script." -font DpSmall -foreground "#666" -wraplength 320 -justify left
-ttk::label .f.nb.script.ch -text "Channels: theta1, theta2, energy, omega_max" -font DpSmall -foreground "#555" -wraplength 320 -justify left
+ttk::label .f.nb.script.ch -text "Axes, parameters and channels are defined by the selected model." -font DpSmall -foreground "#555" -wraplength 320 -justify left
 grid .f.nb.script.h -row 0 -column 0 -sticky ew
 grid .f.nb.script.src -row 1 -column 0 -sticky ew -pady {2 6}
 grid .f.nb.script.reload -row 2 -column 0 -sticky w
@@ -160,7 +169,7 @@ grid .f.nb.script.ch -row 4 -column 0 -sticky ew -pady {8 0}
 
 # --------------------------------------------------------------- status bar
 ttk::frame .f.stat
-grid .f.stat -row 2 -column 0 -sticky ew
+grid .f.stat -row 3 -column 0 -sticky ew
 ttk::label .f.stat.line1 -text "CPU (C) | 0 fps | 0x0" -font DpMono -anchor w
 ttk::label .f.stat.line2 -text "Selected: none | Zoom: 1.00x" -font DpMono -anchor w
 ttk::label .f.stat.line3 -text "theta1 | raw" -font DpMono -anchor w
@@ -204,7 +213,28 @@ proc update_ui {} {
     set ::busy 0
 }
 
+proc model_changed {} {
+    set idx [.f.mrow.cb current]
+    if {$idx < 0 || $idx >= [llength $::model_ids]} { return }
+    call model_set [lindex $::model_ids $idx]
+    rebuild_schema
+    update_ui
+}
+
 proc rebuild_schema {} {
+    set ::model_ids {}
+    set ::model_labels {}
+    foreach m [dp_query models] {
+        lassign $m id title
+        lappend ::model_ids $id
+        lappend ::model_labels $title
+    }
+    .f.mrow.cb configure -values $::model_labels
+    if {[catch {set cur [dp_query model]}] == 0} {
+        lassign $cur mid mtitle
+        set mi [lsearch -exact $::model_ids $mid]
+        if {$mi >= 0} { .f.mrow.cb current $mi }
+    }
     set ::params [dp_query params]
     set ::axes [dp_query axes]
     set ::channels [dp_query channels]

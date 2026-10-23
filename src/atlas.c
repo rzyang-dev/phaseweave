@@ -1,9 +1,8 @@
-/* atlas.c - CPU double-pendulum sampler; this is the reference path for the
+/* atlas.c - CPU model-agnostic sampler; this is the reference path for the
  * 2D map.  The GPU display currently consumes the RGBA image produced here;
  *  a compute-shader backend can be added behind the same channels contract. */
 #include "atlas.h"
 
-#include "model_dp.h"
 #include "physics.h"
 #include "pool.h"
 
@@ -15,8 +14,8 @@
 struct Atlas {
     int res;
     int cells;
-    float *cells_data;  /* per cell: state[4] + params[6] */
-    float *channels;    /* per cell: theta1, theta2, energy, omega_max */
+    float *cells_data;  /* per cell: state[4] + model values[12] */
+    float *channels;    /* per cell: model channels */
     unsigned char *rgba;
     ThreadPool *pool;
 };
@@ -24,6 +23,7 @@ struct Atlas {
 typedef struct {
     Atlas *a;
     const Experiment *e;
+    const Model *m;
     int steps;
 } AtlasJob;
 
@@ -53,7 +53,7 @@ Atlas *atlas_create(const Experiment *e, int res, char *err, size_t errsz)
     if (res > 1024) res = 1024;
     a->res = res;
     a->cells = res * res;
-    a->cells_data = (float *)calloc((size_t)a->cells * 10u, sizeof(float));
+    a->cells_data = (float *)calloc((size_t)a->cells * (4u + MODEL_MAX_PARAMS), sizeof(float));
     a->channels = (float *)calloc((size_t)a->cells * EXP_NCH, sizeof(float));
     a->rgba = (unsigned char *)calloc((size_t)a->cells * 4u, 1);
     if (!a->cells_data || !a->channels || !a->rgba) {
@@ -85,7 +85,7 @@ void atlas_resize(Atlas *a, int res, char *err, size_t errsz)
     free(a->cells_data); free(a->channels); free(a->rgba);
     a->res = res;
     a->cells = res * res;
-    a->cells_data = (float *)calloc((size_t)a->cells * 10u, sizeof(float));
+    a->cells_data = (float *)calloc((size_t)a->cells * (4u + MODEL_MAX_PARAMS), sizeof(float));
     a->channels = (float *)calloc((size_t)a->cells * EXP_NCH, sizeof(float));
     a->rgba = (unsigned char *)calloc((size_t)a->cells * 4u, 1);
     if (!a->cells_data || !a->channels || !a->rgba) {
@@ -99,16 +99,16 @@ void atlas_reset(Atlas *a, const Experiment *e)
     if (!a || !e) return;
     for (y = 0; y < a->res; ++y) {
         for (x = 0; x < a->res; ++x) {
-            double state[4], params[6];
+            double state[MODEL_MAX_STATE], vals[MODEL_MAX_PARAMS];
             float *c;
             i = y * a->res + x;
-            exp_cell_state(e, x, y, state, params);
-            c = a->cells_data + (size_t)i * 10u;
-            c[0] = (float)state[0]; c[1] = (float)state[1];
-            c[2] = (float)state[2]; c[3] = (float)state[3];
-            c[4] = (float)params[0]; c[5] = (float)params[1];
-            c[6] = (float)params[2]; c[7] = (float)params[3];
-            c[8] = (float)params[4]; c[9] = (float)params[5];
+            exp_cell_state(e, x, y, state, vals);
+            c = a->cells_data + (size_t)i * (4u + MODEL_MAX_PARAMS);
+            {
+                int k;
+                for (k = 0; k < MODEL_MAX_STATE; ++k) c[k] = (float)state[k];
+                for (k = 0; k < MODEL_MAX_PARAMS; ++k) c[MODEL_MAX_STATE + k] = (float)vals[k];
+            }
         }
     }
     atlas_step(a, e, 0);
@@ -119,27 +119,22 @@ static void atlas_band(void *user, int y0, int y1)
     AtlasJob *job = (AtlasJob *)user;
     Atlas *a = job->a;
     const Experiment *e = job->e;
-    int x, y;
+    const Model *m = job->m;
+    int x, y, k;
     for (y = y0; y < y1; ++y) {
         for (x = 0; x < a->res; ++x) {
             int i = y * a->res + x;
-            float *c = a->cells_data + (size_t)i * 10u;
-            double state[4];
-            DpModelValues v;
-            float ch[4];
-            state[0] = c[0]; state[1] = c[1]; state[2] = c[2]; state[3] = c[3];
-            v.m1 = c[4]; v.m2 = c[5]; v.l1 = c[6]; v.l2 = c[7];
-            v.g = c[8]; v.damping = c[9];
-            v.theta1 = state[0]; v.theta2 = state[1]; v.omega1 = state[2]; v.omega2 = state[3];
-            model_dp_step(state, &v, e->dt, job->steps);
-            c[0] = (float)state[0]; c[1] = (float)state[1];
-            c[2] = (float)state[2]; c[3] = (float)state[3];
-            v.theta1 = state[0]; v.theta2 = state[1]; v.omega1 = state[2]; v.omega2 = state[3];
-            model_dp_channels(state, &v, ch);
-            a->channels[(size_t)i * EXP_NCH + 0] = ch[0];
-            a->channels[(size_t)i * EXP_NCH + 1] = ch[1];
-            a->channels[(size_t)i * EXP_NCH + 2] = ch[2];
-            a->channels[(size_t)i * EXP_NCH + 3] = ch[3];
+            float *c = a->cells_data + (size_t)i * (4u + MODEL_MAX_PARAMS);
+            double state[MODEL_MAX_STATE];
+            double vals[MODEL_MAX_PARAMS];
+            float ch[MODEL_MAX_CHANNELS];
+            for (k = 0; k < MODEL_MAX_STATE; ++k) state[k] = c[k];
+            for (k = 0; k < MODEL_MAX_PARAMS; ++k) vals[k] = c[MODEL_MAX_STATE + k];
+            m->step(m, state, vals, e->dt, job->steps);
+            for (k = 0; k < MODEL_MAX_STATE; ++k) c[k] = (float)state[k];
+            m->observe(m, state, vals, ch);
+            for (k = 0; k < EXP_NCH; ++k)
+                a->channels[(size_t)i * EXP_NCH + k] = (k < m->nchannels) ? ch[k] : 0.0f;
         }
     }
 }
@@ -147,9 +142,9 @@ static void atlas_band(void *user, int y0, int y1)
 void atlas_step(Atlas *a, const Experiment *e, int steps)
 {
     AtlasJob job;
-    if (!a || !e) return;
+    if (!a || !e || !e->mdl) return;
     if (steps < 0) steps = 0;
-    job.a = a; job.e = e; job.steps = steps;
+    job.a = a; job.e = e; job.m = e->mdl; job.steps = steps;
     if (a->pool) pool_run(a->pool, atlas_band, &job, a->res);
     else atlas_band(&job, 0, a->res);
 }
@@ -263,12 +258,12 @@ int atlas_cells(const Atlas *a) { return a ? a->cells : 0; }
 int atlas_threads(const Atlas *a) { return a && a->pool ? pool_threads(a->pool) : 0; }
 const unsigned char *atlas_rgba(const Atlas *a) { return a ? a->rgba : NULL; }
 
-void atlas_read_cell(const Atlas *a, int index, float state[4], float params[6], float ch[4])
+void atlas_read_cell(const Atlas *a, int index, float state[MODEL_MAX_STATE], float vals[MODEL_MAX_PARAMS], float ch[MODEL_MAX_CHANNELS])
 {
     const float *c;
-    if (!a || !state || !params || !ch || index < 0 || index >= a->cells) return;
-    c = a->cells_data + (size_t)index * 10u;
-    memcpy(state, c, 4u * sizeof(float));
-    memcpy(params, c + 4, 6u * sizeof(float));
+    if (!a || !state || !vals || !ch || index < 0 || index >= a->cells) return;
+    c = a->cells_data + (size_t)index * (4u + MODEL_MAX_PARAMS);
+    memcpy(state, c, MODEL_MAX_STATE * sizeof(float));
+    memcpy(vals, c + MODEL_MAX_STATE, MODEL_MAX_PARAMS * sizeof(float));
     memcpy(ch, a->channels + (size_t)index * EXP_NCH, 4u * sizeof(float));
 }

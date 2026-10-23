@@ -1,12 +1,19 @@
-# 动力学系统地图实验箱 · 双摆作为示例
+# 动力学系统地图实验箱 · 双摆 / Logistic / Hénon
 
-这不是“再画一个双摆”，而是一个 **二维参数/初值地图（2D map）** 的实验框架：
+一个 **二维参数/初值地图（2D map）** 实验框架：
 
-> 写一个动力系统模型 → 选两个参数/初值作为屏幕 x/y → 每个像素积分一次 →
-> 得到多个通道（最终角度、能量、最大角速度……）→ 选通道、后处理和调色板显示 → 右键选像素看轨迹。
+> 选模型 → 选两个参数/初值作为 x/y → 每个像素积分 → 多通道观测量 →
+> 后处理 + 调色板 → 右键选像素看轨道/状态。
 
-双摆是第一个内置示例。模型层、实验描述层、采样层、通道层、视图层和 UI 已经分开；
-下一步才是任意表达式模型和第二个模型。
+三个模型共享同一套 Experiment/Atlas/View/Panel：
+
+| 模型 | 类型 | 默认 x/y 轴 | 参数 | 通道 |
+| --- | --- | --- | --- | --- |
+| Double pendulum | ODE | θ1 / θ2 | θ1, θ2, ω1, ω2, m1, m2, l1, l2, g, damping | θ1, θ2, energy, omega_max |
+| Logistic map | map | r / x0 | r, x0 | x, lyapunov, mean, |x| |
+| Hénon map | map | a / b | a, b, x0, y0 | x, y, radius, |x| |
+
+双摆窗口只对双摆模型存在；Logistic/Hénon 是“地图 + 参数面板”两窗口。
 
 ![三窗口](docs/shot-windows.png)
 
@@ -15,11 +22,15 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.4.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.5.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
+
+# 直接打开某个模型
+.\dist\run\dp-phase\dp-phase.exe /model logistic
+.\dist\run\dp-phase\dp-phase.exe /model henon
 ```
 
-发布物是 **解压即用的文件夹 + zip**，不再做单 exe/内嵌 Tcl/Tk：
+发布物是解压即用的文件夹 + zip；Tcl/Tk 动态链接，不做单 exe/内嵌运行时：
 
 ```text
 dp-phase/
@@ -27,166 +38,129 @@ dp-phase/
   tcl86.dll / tk86.dll / libgcc_s_dw2-1.dll / zlib1.dll
   lib/tcl8.6, lib/tk8.6
   ui/panel.tcl
-  experiments/double-pendulum.lua
-  docs/
+  experiments/palette.lua
 ```
 
-Tcl/Tk 直接动态链接（exe 导入 `tcl86.dll`/`tk86.dll`），脚本库路径由 exe 目录决定，
-不依赖 `C:\MinGW`、当前工作目录或系统安装。已在“没有 MinGW、PATH 只剩系统目录”的
-干净副本里验证过面板仍能启动。
+已验证“PATH 只剩系统目录、MINGW_ROOT 指向不存在目录”的干净副本可以启动面板。
 
-## 这一轮完成了什么
+## 三个模型
 
-### 1. 双摆退成“示例模型”
+### Double pendulum（示例 ODE）
 
-- 参数表、轴、范围、通道、视图都在 `Experiment` 里；
-- 双摆参数：`theta1, theta2, omega1, omega2, m1, m2, l1, l2, g, damping`；
-- x/y 轴可以选任意两个 eligible 参数：
-  - θ1/θ2：初值地图；
-  - m1/m2：质量参数图；
-  - 以后 l1/l2、damping、ω 等也可以直接做轴。
+状态 `[θ1, θ2, ω1, ω2]`，参数 `[θ1, θ2, ω1, ω2, m1, m2, l1, l2, g, damping]`。
+x/y 可以是任意两个 eligible 参数：
 
-### 2. 参数在面板里改，不再重载 Lua
+- θ1/θ2：初值地图（Angle map 预设）；
+- m1/m2：质量参数图（Mass map 预设）；
+- l1/l2、damping、ω 等也可直接做轴。
 
-面板分三页：
+物理验收仍覆盖静止能量、damping=0 能量守恒、C/Fortran 参考对照。
 
-- **View**：Color by、View（raw/gradient/range/variance）、Palette、Grid/Periodic/Circle、Reset view、Angle/Mass 预设。
-- **Parameters**：X/Y 轴、X/Y 范围、分辨率、dt、Steps/frame、10 个参数、Apply parameters。参数改动通过 Apply 生效，不触发 Lua reload。
-- **Script**：脚本路径、Reload palette（F5）、说明。
+### Logistic map
 
-![View 面板](docs/shot-panel.png)
+`x ← r x (1-x)`，初值 `x0`：
+
+- 默认轴 r/x0，r ∈ [0,4]，x0 ∈ [0,1]；
+- 通道：
+  - `x`：最终状态；
+  - `lyapunov`：有限时间 Lyapunov 指数，`mean(log|r(1-2x)|)`；
+  - `mean`：轨道平均；
+  - `|x|`。
+- 自检覆盖 r=2.5 的稳定不动点 1-1/r、r=4 时 λ≈ln 2。
+
+![Logistic map](docs/shot-logistic.png)
+
+### Hénon map
+
+`x' = 1 - a x² + y`，`y' = b x`：
+
+- 参数 a,b,x0,y0；默认轴 a/b；
+- 通道 x、y、radius、|x|；
+- 自检覆盖 a=1.4,b=0.3 的有界吸引子。
+
+![Hénon map](docs/shot-henon.png)
+
+## 模型选择与面板
+
+面板标题下是 **Model** 下拉框：
+
+- 切换模型会重建参数 schema、轴、范围和通道；
+- 双摆会重新创建右侧检查器，Logistic/Hénon 不创建；
+- 参数在 **Parameters** 页改，Apply 后重建，不需要 reload Lua；
+- **Angle map / Mass map** 预设是双摆专用；在 map 模型上点它会切回双摆。
+
+![模型面板](docs/shot-panel.png)
+
+**View**：Color by、View（raw/gradient/range/variance）、Palette、Grid/Periodic/Circle、Reset view、Angle/Mass 预设。
+
+**Parameters**：X/Y 轴、范围、Res、dt、Steps/frame、模型参数、Apply parameters。
+面板高度按屏幕自适应（1080p 下 620 客户区），双摆 10 个参数能完整显示。
 
 ![参数面板](docs/shot-panel-params.png)
 
-### 3. 多通道 + 局部敏感性
+**Script**：`experiments/palette.lua`、Reload palette（F5）。
 
-每个像素输出 4 个通道：
+## 通道与后处理
 
-| 通道 | 含义 | 显示范围 |
-| --- | --- | --- |
-| `theta1` | 最终 θ1 | [-π, π]，循环色带 |
-| `theta2` | 最终 θ2 | [-π, π]，循环色带 |
-| `energy` | 总能量（动能 + 势能） | 当前按 ±50 J |
-| `omega_max` | max(|ω1|, |ω2|) | [0, 20] rad/s |
+模型提供自己的通道范围/单位/是否循环；显示层统一处理：
 
-View 后处理对选中通道做 3×3 局部统计：
-
-- `raw`：原值；
-- `gradient`：Sobel 幅值；
-- `range`：3×3 极差；
-- `variance`：3×3 标准差。
-
-后处理会自动按当前画面做 min/max 映射，所以“敏感性”边界不会因为绝对尺度太小而看不见。
-
-角度图（θ1/θ2，颜色 = 最终 θ1）：
-
-![角度图](docs/shot-phase.png)
-
-质量图（m1/m2，颜色 = 局部 omega_max 敏感性）：
-
-![质量图](docs/shot-mass.png)
-
-### 4. 物理验收
-
-- 双摆 RK4 仍与 C 参考/原 Fortran 内核逐式对应；
-- 新增能量函数 `dp_energy`，自检包含：
-  - 静止能量 `-(m1+m2)g l1 - m2 g l2`；
-  - damping=0、dt=0.001、2000 步能量相对漂移 < 1e-3；
-- 当前默认 `theta1=0.5, theta2=0`，这样质量图在固定角度下不会退化成静止；
-- 角度轴会覆盖这两个默认值。
-
-### 5. 性能
-
-- 64×64 地图：CPU 多线程采样，约 **142–147 fps**（每帧 1–8 步）；
-- 500 步 64×64 离线渲染约几十毫秒；
-- 质量图预设下仍保持 100+ fps；
-- 256×256 时计算量约 16 倍，CPU 仍可用但会明显变慢；GPU compute 是下一阶段。
-
-### 6. 低分辨率仍然锐利
-
-历史问题是场纹理 `GL_LINEAR` 放大：64×64 拉到 700×700 时每个纹素和邻居双线性混合，
-格子边界变糊。现在 atlas 纹理是 `GL_NEAREST`，显示层只做最近邻采样。
-
-| 修复前 | 修复后 |
+| 后处理 | 计算 |
 | --- | --- |
-| ![before](docs/blur-before.png) | ![after](docs/blur-after.png) |
+| raw | 原值，按模型范围映射 |
+| gradient | 3×3 Sobel 幅值 |
+| range | 3×3 极差 |
+| variance | 3×3 标准差 |
 
-### 7. 打包
-
-`build.ps1` 六步：检查 Tcl/Tk → 嵌入 shader → 编译 C → 编译 Fortran（保留参考内核）→
-windres → 动态链接 Tcl/Tk + 静态 Lua/Fortran → staging → zip。
-
-- `dist/dp-phase/`：可运行目录；
-- `dist/dp-phase-1.4.0.zip`：约 3.6 MB；
-- exe 约 713 KB；
-- 导入表：KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + `tcl86.dll`/`tk86.dll`；
-- Tcl/Tk 的 `libgcc_s_dw2-1.dll`、`zlib1.dll` 也在 zip 里。
-
-## 控制面板
-
-| 功能 | 面板 | 快捷键 |
-| --- | --- | --- |
-| 暂停/继续 | Pause/Resume | Space |
-| 重置地图 | Reset | R |
-| 调色板 | Palette | C |
-| 格线 | Grid | G |
-| 循环边界 | Periodic | P |
-| 选中圆圈 | Circle | O |
-| 重置视图 | Reset view | 0 |
-| 重新读调色板脚本 | Reload palette | F5 |
-| 退出 | Quit / 标题栏 × | Esc |
-
-鼠标：左键拖动平移，滚轮以光标为中心缩放，右键选像素。选中像素后右侧双摆窗口显示
-该格点的质量、最终角度/角速度、阻尼和能量。
-
-![双摆检查器](docs/shot-pendulum.png)
+gradient/range/variance 自动按当前画面 min/max 映射；角度差分使用 wrap_diff。
 
 ## Lua 现在负责什么
 
-`experiments/double-pendulum.lua` 现在是一份 **实验元数据 + 调色板脚本**：
+`experiments/palette.lua` 是共享的调色板 + 实验元数据脚本：
 
-- 标题、模型名、meta（轴/通道说明）；
+- 标题/meta；
 - `palette()` / `set_scheme()` / `status()`；
-- 参数默认值仍然在 C 的 `Experiment` 里，面板实时改，不需要 reload；
-- F5 / Script 页的 Reload 只重新读调色板。
+- 参数 schema 仍在 C 的 Model 表里，面板实时改，不需要 reload；
+- F5 只重读调色板。
 
-这是为下一步“Lua 描述实验 + 表达式模型”留的接口。当前还不是任意公式 DSL，也不是
-AUTO/MatCont 式的连续化工具。
+下一步会把 experiment schema/表达式模型移到 Lua，再生成 GLSL/CPU 内核；当前不是任意公式 DSL。
 
 ## 代码结构
 
 ```text
-src/experiment.c/h   参数 schema、轴选择、范围、通道元数据
-src/model_dp.c/h     双摆示例模型：初值、RK4、能量、通道
-src/atlas.c/h        每像素 state+params、调用模型、通道、后处理、RGBA
-src/app.c            窗口/帧循环/面板命令/选择/预设
-src/gpu.c            OpenGL 4.3 上下文、atlas RGBA 显示、线叠加
-src/phase_view.c     归一化 [0,1] 视图、pick、平移/缩放、格线/圆圈
-src/panel.c          Tcl/Tk 宿主与 dp_action/dp_status/dp_query
-ui/panel.tcl         三页动态面板
-experiments/         实验脚本（当前只有双摆示例）
-src/physics.c        C 参考 RK4、能量、调色板
-src/sim.c, kernel_fortran.c, fortran/  旧 Fortran 参考/自检保留
-src/selftest.c       CPU 65 项；含 GPU 的 71 项
+src/model.h         通用 Model 接口（参数/状态/通道/回调）
+src/model.c         模型注册表
+src/model_dp.c      双摆 ODE
+src/model_logistic.c Logistic map + Lyapunov
+src/model_henon.c   Hénon map
+src/experiment.c/h  模型无关的轴/范围/通道 schema
+src/atlas.c/h       每像素 state+params、调用模型、通道、后处理、RGBA
+src/app.c           窗口/帧循环/模型切换/选择/预设
+src/gpu.c           OpenGL 4.3 上下文、atlas RGBA 显示、线叠加
+src/phase_view.c    归一化 [0,1] 视图、pick、平移/缩放、格线/圆圈
+src/panel.c         Tcl/Tk 宿主与 dp_action/dp_status/dp_query
+ui/panel.tcl        三页动态面板 + Model 下拉
+experiments/        共享调色板脚本
+src/selftest.c      CPU 76 项；含 GPU 的 82 项
 ```
 
 ## 验证
 
-- `/selftest`：**65/65**
-- `/gpu-selftest`：**71/71**
-- 质量图预设、参数页、右键选点、双摆能量显示、无 MinGW 的干净副本启动都已实测；
+- `/selftest`：**76/76**
+- `/gpu-selftest`：**82/82**
+- 三个模型 GUI 启动、面板切换、双摆检查器创建/销毁、Logistic/Hénon 地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
 ## 已知边界 / 下一步
 
-1. **不是任意公式工具**：模型仍是内置双摆；Lua 表达式模型、代码生成到 GLSL 是下一阶段。
-2. **GPU 只负责显示**：GUI 的采样走 CPU 多线程；GPU compute atlas 是下一阶段。
-3. **只有一个示例模型**：下一个应是 logistic/Hénon 这种可验证的 map，证明模型解耦。
-4. **能量通道范围固定 ±50 J**，还没有 colorbar / 自动分位数 / 单位轴标签。
-5. 没有保存/加载实验文件、导出 CSV、3D 切片滑块；这些都属于后续。
+1. Lua 仍是调色板/meta，不是模型 DSL。
+2. GUI 采样是 CPU；GPU compute atlas 未接。
+3. 地图模型没有专用 inspector；只有双摆有检查器。
+4. 没有 colorbar、轴标签/单位、CSV/PNG 导出、保存实验。
+5. 能量通道范围固定 ±50 J；极端参数会饱和。
+6. 没有 3D 切片/分岔连续化；目标是 2D 地图，不是 AUTO/MatCont 替代品。
 
 ## 仓库
 
 - 分支：`three-windows`
-- 历史：`baseline-single-window` → 打包/动态 Tcl/Tk → 实验地图/动态参数
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.4.0.zip`

@@ -37,9 +37,10 @@ struct App {
     PhaseView view;
     int      selected;
     int      sel_x, sel_y;
-    float    sel_state[4];
+    float    sel_state[MODEL_MAX_STATE];
+    float    sel_vals[MODEL_MAX_PARAMS];
     float    sel_params[6];
-    float    sel_ch[4];
+    float    sel_ch[MODEL_MAX_CHANNELS];
     int      dragging;
     int      drag_x, drag_y;
 
@@ -70,10 +71,45 @@ static void panel_status_cb(void *user, PanelStatus *st);
 static void panel_query_cb(void *user, const char *what, char *out, size_t outsz);
 static void panel_quit_cb(void *user);
 static int  app_do_action(App *a, const char *name, const char *value);
+static void app_set_last(App *a, const char *msg);
+static void app_error_box(App *a, const char *msg);
+static void app_set_title(App *a, int force);
 static void app_read_selected(App *a);
 static void app_render_phase(App *a);
 static void app_apply_experiment(App *a);
 static void app_colorize(App *a);
+static void app_set_model(App *a, const char *id)
+{
+    const Model *m;
+    int res;
+    char err[512];
+    if (!a || !id) return;
+    m = model_by_id(id);
+    if (!m || a->exp.mdl == m) return;
+    res = a->exp.res;
+    if (a->pview) { pendulum_view_destroy(a->pview); a->pview = NULL; }
+    exp_init(&a->exp, m);
+    a->exp.res = res;
+    a->selected = -1;
+    if (a->atlas) {
+        atlas_destroy(a->atlas);
+        a->atlas = atlas_create(&a->exp, a->exp.res, err, sizeof(err));
+        if (!a->atlas) app_error_box(a, err[0] ? err : "atlas creation failed");
+    }
+    if (a->plat && !a->opt.capture_path && strcmp(a->exp.model, "double_pendulum") == 0) {
+        a->pview = pendulum_view_create(a->inst, L"Double Pendulum",
+                                        a->right_x, 16, a->right_w, a->pend_h,
+                                        a, app_pend_close, app_pend_key);
+    }
+    pv_reset(&a->view);
+    app_colorize(a);
+    app_set_last(a, a->exp.title);
+    app_set_title(a, 1);
+}
+
+static void app_apply_experiment(App *a);
+static void app_colorize(App *a);
+static void app_set_model(App *a, const char *id);
 
 static void app_set_last(App *a, const char *msg)
 {
@@ -137,7 +173,17 @@ static void app_read_selected(App *a)
     int idx;
     if (!a || !a->atlas || a->selected < 0) return;
     idx = a->selected;
-    atlas_read_cell(a->atlas, idx, a->sel_state, a->sel_params, a->sel_ch);
+    atlas_read_cell(a->atlas, idx, a->sel_state, a->sel_vals, a->sel_ch);
+    memset(a->sel_params, 0, sizeof(a->sel_params));
+    if (a->exp.mdl == &DP_MODEL) {
+        /* double-pendulum model values are m1,m2,l1,l2,g,damping at 4..9 */
+        a->sel_params[0] = a->sel_vals[4];
+        a->sel_params[1] = a->sel_vals[5];
+        a->sel_params[2] = a->sel_vals[6];
+        a->sel_params[3] = a->sel_vals[7];
+        a->sel_params[4] = a->sel_vals[8];
+        a->sel_params[5] = a->sel_vals[9];
+    }
 }
 
 static void app_reset(App *a)
@@ -183,7 +229,7 @@ static int app_read_disk_lua(App *a, char **data, size_t *len)
 {
     char dir[MAX_PATH];
     platform_exe_dir(dir, sizeof(dir));
-    snprintf(a->hot_path, sizeof(a->hot_path), "%s\\experiments\\double-pendulum.lua", dir);
+    snprintf(a->hot_path, sizeof(a->hot_path), "%s\\experiments\\palette.lua", dir);
     if (platform_read_file(a->hot_path, data, len)) { a->hot_from_disk = 1; return 1; }
     snprintf(a->hot_path, sizeof(a->hot_path), "%s\\hot.lua", dir);
     if (platform_read_file(a->hot_path, data, len)) { a->hot_from_disk = 1; return 1; }
@@ -198,7 +244,7 @@ static void app_reload(App *a)
     char err[1024];
     if (!a) return;
     if (!app_read_disk_lua(a, &disk, &len)) {
-        app_error_box(a, "experiments/double-pendulum.lua not found next to dp-phase.exe");
+        app_error_box(a, "experiments/palette.lua not found next to dp-phase.exe");
         return;
     }
     if (!a->lua) {
@@ -349,8 +395,8 @@ static int app_do_action(App *a, const char *name, const char *value)
     }
     if (strcmp(name, "channel_set") == 0 && value) {
         int i;
-        for (i = 0; i < EXP_NCH; ++i) if (strcmp(exp_channel_name(i), value) == 0) break;
-        if (i >= EXP_NCH) { app_set_last(a, "unknown channel"); return 0; }
+        for (i = 0; i < a->exp.nch; ++i) if (strcmp(exp_channel_name(&a->exp, i), value) == 0) break;
+        if (i >= a->exp.nch) { app_set_last(a, "unknown channel"); return 0; }
         a->exp.channel = i;
         app_colorize(a);
         app_set_last(a, value);
@@ -368,6 +414,7 @@ static int app_do_action(App *a, const char *name, const char *value)
         return 1;
     }
     if (strcmp(name, "preset") == 0 && value) {
+        if (strcmp(a->exp.model, "double_pendulum") != 0) app_set_model(a, "double_pendulum");
         if (strcmp(value, "masses") == 0) {
             exp_set_axis(&a->exp, 0, "m1");
             exp_set_axis(&a->exp, 1, "m2");
@@ -391,6 +438,10 @@ static int app_do_action(App *a, const char *name, const char *value)
         pv_reset(&a->view);
         app_apply_experiment(a);
         app_set_last(a, value);
+        return 1;
+    }
+    if (strcmp(name, "model_set") == 0 && value) {
+        app_set_model(a, value);
         return 1;
     }
     if (strcmp(name, "apply") == 0) { app_apply_experiment(a); return 1; }
@@ -482,7 +533,7 @@ static void panel_status_cb(void *user, PanelStatus *st)
     st->sel_x = a->sel_x; st->sel_y = a->sel_y;
     st->zoom = a->view.zoom;
     strncpy(st->scheme, a->exp.palette, sizeof(st->scheme) - 1);
-    strncpy(st->source, a->hot_from_disk ? "experiments/double-pendulum.lua" : "no experiment script",
+    strncpy(st->source, a->hot_from_disk ? "experiments/palette.lua" : "no palette script",
             sizeof(st->source) - 1);
     strncpy(st->last, a->last_action, sizeof(st->last) - 1);
 }
@@ -516,7 +567,7 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
                     a->exp.p[a->exp.axis_x].name, a->exp.p[a->exp.axis_y].name,
                     a->exp.xmin, a->exp.xmax, a->exp.ymin, a->exp.ymax);
     } else if (strcmp(what, "channels") == 0) {
-        for (i = 0; i < EXP_NCH; ++i) {
+        for (i = 0; i < a->exp.nch; ++i) {
             ExpChannelInfo ci;
             exp_channel_info(&a->exp, i, &ci);
             append_list(out, outsz, "{%s %s %s %.9g %.9g %d} ",
@@ -527,9 +578,16 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
         if (a->exp.post == 1) post = "gradient";
         else if (a->exp.post == 2) post = "range";
         else if (a->exp.post == 3) post = "variance";
-        append_list(out, outsz, "%s %s %s", exp_channel_name(a->exp.channel), post, a->exp.palette);
+        append_list(out, outsz, "%s %s %s", exp_channel_name(&a->exp, a->exp.channel), post, a->exp.palette);
     } else if (strcmp(what, "integration") == 0) {
         append_list(out, outsz, "%d %.9g %d", a->exp.res, a->exp.dt, a->exp.max_steps);
+    } else if (strcmp(what, "models") == 0) {
+        for (i = 0; i < model_count(); ++i) {
+            const Model *m = model_at(i);
+            append_list(out, outsz, "{%s {%s}} ", m->id, m->title);
+        }
+    } else if (strcmp(what, "model") == 0) {
+        append_list(out, outsz, "%s %s", a->exp.mdl->id, a->exp.mdl->title);
     } else if (strcmp(what, "source") == 0) {
         append_list(out, outsz, "%s", a->hot_path[0] ? a->hot_path : "(none)");
     } else if (strcmp(what, "title") == 0) {
@@ -590,7 +648,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     a->inst = inst;
     a->opt = *opt;
     a->selected = -1;
-    exp_init(&a->exp);
+    exp_init(&a->exp, opt->model ? model_by_id(opt->model) : &DP_MODEL);
     if (opt->force_res > 0) a->exp.res = dp_clampi(opt->force_res, 16, 512);
     if (opt->axis_x) exp_set_axis(&a->exp, 0, opt->axis_x);
     if (opt->axis_y) exp_set_axis(&a->exp, 1, opt->axis_y);
@@ -611,8 +669,8 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     }
     if (opt->channel) {
         int ci;
-        for (ci = 0; ci < EXP_NCH; ++ci)
-            if (strcmp(exp_channel_name(ci), opt->channel) == 0) a->exp.channel = ci;
+        for (ci = 0; ci < a->exp.nch; ++ci)
+            if (strcmp(exp_channel_name(&a->exp, ci), opt->channel) == 0) a->exp.channel = ci;
     }
     if (opt->post) {
         if (strcmp(opt->post, "gradient") == 0) a->exp.post = 1;
@@ -673,9 +731,11 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
             a->right_x = 16 + side_px + 24;
             a->right_w = dp_clampi((int)(side_px * 0.52), 300, 380);
             a->pend_h = dp_clampi((int)(side_px * 0.42), 220, 340);
-            a->pview = pendulum_view_create(inst, L"Double Pendulum",
-                                            a->right_x, 16, a->right_w, a->pend_h,
-                                            a, app_pend_close, app_pend_key);
+            if (strcmp(a->exp.model, "double_pendulum") == 0) {
+                a->pview = pendulum_view_create(inst, L"Double Pendulum",
+                                                a->right_x, 16, a->right_w, a->pend_h,
+                                                a, app_pend_close, app_pend_key);
+            }
             {
                 RECT work;
                 int panel_y, panel_h;
@@ -686,7 +746,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
                 snprintf(ui_path, sizeof(ui_path), "%s\\ui\\panel.tcl", dir);
                 SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
                 panel_y = 16 + a->pend_h + 46;
-                panel_h = dp_clampi((int)(work.bottom - work.top) - panel_y - 16, 420, 540);
+                panel_h = dp_clampi((int)(work.bottom - work.top) - panel_y - 16, 420, 620);
                 memset(&cb, 0, sizeof(cb));
                 cb.user = a;
                 cb.action = panel_action_cb;

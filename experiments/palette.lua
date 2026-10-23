@@ -1,20 +1,20 @@
--- double-pendulum.lua - experiment metadata + palette script
+-- palette.lua - shared palette + experiment metadata
 --
 -- This milestone keeps the model and parameter schema in C (double pendulum is
 -- the built-in example).  The Lua script owns the palette and experiment
 -- metadata; parameter values are edited in the panel and applied without a
 -- reload.  Reload (F5) only re-reads this file.
 --
--- The next milestone will let this table define params/axes/channels and
--- expression models; the shape below is intentionally boring and stable.
+-- The next milestone will let experiment scripts define params/axes/channels and
+-- expression models; this palette is shared by the built-in models.
 
 local M = {}
 
-M.title = "Double pendulum"
+M.title = "Palette"
 M.scheme = "phase"
 M.schemes = { "phase", "ember", "ice", "mono" }
 M.meta = {
-    model = "double_pendulum",
+    model = "all",
     x = "theta1",
     y = "theta2",
     channels = { "theta1", "theta2", "energy", "omega_max" },

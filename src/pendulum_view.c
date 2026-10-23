@@ -261,6 +261,9 @@ PendulumView *pendulum_view_create(HINSTANCE inst, const wchar_t *title,
 void pendulum_view_destroy(PendulumView *v)
 {
     if (!v) return;
+    /* Programmatic destroy must not look like the user closed the window. */
+    v->closefn = NULL;
+    v->keyfn = NULL;
     if (v->hwnd) DestroyWindow(v->hwnd);
     if (v->font_title) DeleteObject(v->font_title);
     if (v->font_body) DeleteObject(v->font_body);

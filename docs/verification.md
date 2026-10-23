@@ -1,4 +1,4 @@
-# 验证记录：二维动力学地图实验箱
+# 验证记录：三模型通用地图实验箱
 
 本机：Windows 10，1920×1080，125% 缩放；MinGW.org GCC 6.3、gfortran 6.3、
 Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
@@ -6,160 +6,153 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ## 1. 构建
 
 ```text
-[1/6] checking Tcl/Tk runtime
-[2/6] embedding shaders (field, display, line, atlas)
-[3/6] compiling C skeleton (17 objects)
-[4/6] compiling Fortran kernel
-[5/6] compiling resources
-[6/6] linking (dynamic Tcl/Tk, static Lua/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (712,704 bytes)
-      staged 9.9 MB
-      dist/dp-phase-1.4.0.zip (3.6 MB)
+[3/6] compiling C skeleton (20 objects)
+[6/6] linking (dynamic Tcl/Tk, static C/Fortran)
+OK -> dist/dp-phase/dp-phase.exe (717,824 bytes)
+      staged 10.0 MB
+      dist/dp-phase-1.5.0.zip (3.6 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 712,704 B（GNU ld 的 PE 时间戳使每次链接的 SHA256 不同，不在这里固定） |
-| zip | 约 3.5–3.7 MB（docs 改动会改变 zip 哈希，不在这里固定） |
-| 解压 | 约 997 个文件，约 10 MB（含 docs） |
-| 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + **tcl86.dll / tk86.dll** |
-| 随包 DLL | tcl86.dll、tk86.dll、libgcc_s_dw2-1.dll、zlib1.dll |
-| 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/double-pendulum.lua |
+| exe | 717,824 B |
+| zip | 约 3.7 MB（docs 改动会改变 zip 字节数） |
+| 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll |
+| 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
+| 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/palette.lua |
 
-已从 `dist/dp-phase-1.4.0.zip` 解压到独立目录，`/selftest` 通过；另做了一次
-“PATH 只有 C:\Windows\System32;C:\Windows、MINGW_ROOT 指向不存在目录”的干净副本启动，
-三个窗口和面板正常。
+（GNU ld 的 PE 时间戳使每次链接的 SHA256 不同，不固定哈希。）
 
 ## 2. 自检
 
 ```text
 -- experiment / atlas
-  [ok]   atlas creation
+  [ok]   double-pendulum schema has named parameters
+  [ok]   axes can be switched to masses
   [ok]   atlas cell preserves per-pixel masses
-  [ok]   energy channel is finite
-  [ok]   energy/range view colorizes
   [ok]   rest energy matches m g l
   [ok]   RK4 conserves energy for damping=0
-...
-selftest: 65 passed, 0 failed
+-- map models
+  [ok]   three models are registered
+  [ok]   logistic r=2.5 converges to 1-1/r
+  [ok]   logistic r=4 Lyapunov ~= ln 2
+  [ok]   henon state stays bounded
+  [ok]   logistic parameter map is non-uniform
+selftest: 76 passed, 0 failed
 ```
 
-`/gpu-selftest`（旧 GPU compute/显示回归 + 新增 CPU 测试）：**71/71**。
-GUI 的采样已经不走旧 GPU compute；GPU 只负责 atlas RGBA 显示和线叠加。
+`/gpu-selftest`：**82/82**（76 CPU + 旧 GPU 回归）。
+GUI 采样仍是 CPU；GPU 只负责 atlas RGBA 显示和线叠加。
 
-## 3. 地图与通道
+## 3. 双摆三窗口
 
-### 3.1 角度图（θ1/θ2，颜色 = 最终 θ1）
+![三窗口](shot-windows.png)
 
-![角度图](shot-phase.png)
-
-- 64×64，格线 + 选中圆圈；
-- 右键选中中心格（32,32），双摆窗口同步；
-- 颜色查找表来自外部 Lua 调色板。
-
-### 3.2 质量图（m1/m2，颜色 = 局部 omega_max 敏感性）
-
-![质量图](shot-mass.png)
-
-- 先在参数页设 m1/m2 为轴、范围 0.2–3、固定 θ1=0.5、θ2=0；
-- View = range（3×3 极差）；
-- 显示的是局部敏感性，不是原始能量；
-- 能量对质量是线性的，所以 energy+range 的 3×3 极差在内部为常数；这是物理上正确的，
-  因此 mass 预设使用 omega_max + range。
-
-### 3.3 参数页
-
-![参数页](shot-panel-params.png)
-
-- X/Y 轴 m1/m2；
-- 范围 0.2–3；
-- Res 64、dt 0.01、Steps/frame 8；
-- 10 个参数两列布局，Apply parameters 生效；
-- 改参数不 reload Lua。
-
-### 3.4 检查器
+- 默认 θ1/θ2 角度图，64×64；
+- 右键中心格，双摆检查器显示 cell、m1/m2、θ/ω、damping、energy；
+- 参数页在 1080p 下完整显示 10 个参数（面板客户区 620）。
 
 ![双摆检查器](shot-pendulum.png)
 
-显示 cell、m1/m2、最终 θ/ω、damping、energy。当前选中中心格，m1=m2=1，
-damping=0，能量约 -29.39 J。
+## 4. Logistic map
 
-## 4. 面板交互
+![Logistic map](shot-logistic.png)
 
-- 启动后默认 View 页：Color by theta1、View raw、Palette phase、Grid/Circle 开、Periodic 关；
-- 点 **Mass map**：
-  - 标题变为 `Double pendulum Atlas | CPU | ... | omega_max`
-  - 面板 Color by=omega_max、View=range、Last=masses；
-  - 参数页 X/Y=m1/m2、范围 0.2/3、theta1=0.5；
-- 点 **Angle map** 回到 θ1/θ2；
-- 右键选点后 Selected 更新，双摆窗口显示能量；
-- 面板 Quit/标题栏 ×、双摆 ×、相空间 × 都正常退出（此前测过）。
-- 键盘 Space/R/C/G/P/O/0/F5/Esc 在相空间窗口可用。
+- 默认 r/x0 轴，r∈[0,4]，x0∈[0,1]；
+- 每像素 200 步（离屏）/连续帧（GUI）；
+- Color by = x 时是经典 Logistic 参数图：周期窗、混沌带、边界清晰；
+- Color by = lyapunov 时 r=4 附近约 ln 2。
 
-无 MinGW 的干净副本：
+自检：
+
+- r=2.5 从 x0=0.5 收敛到 1-1/r=0.6；
+- r=4,x0=0.3,1000 步 → 状态在 [0,1]，λ≈0.693；
+- atlas 的 lyapunov 通道在 r 方向非均匀。
+
+## 5. Hénon map
+
+![Hénon map](shot-henon.png)
+
+- 默认 a/b 轴，a=1.4,b=0.3,x0=y0=0；
+- Color by = x，64×64，连续帧；
+- 自检：1000 步后状态有限、|x|<2、|y|<1，radius 通道有效。
+
+## 6. 模型切换
+
+面板标题下 Model 下拉：
+
+- 启动默认 Double pendulum；
+- 选 Logistic map：
+  - 相空间标题变为 `Logistic map Atlas | CPU | ... | x`；
+  - 双摆窗口消失；
+  - Color by 变为 x，参数页只剩 r/x0；
+  - Last: Logistic map；
+- 选回 Double pendulum 会重新创建双摆窗口。
+
+已用真实鼠标点击 combo popdown 的实测输出：
 
 ```text
-title: Control Panel
-title: Double Pendulum
-title: Double pendulum Atlas | CPU | 144 fps | 64x64 | theta1
-panel=True
+after open: popdown
+pop rect 804,456 301x67
+titles after:
+Control Panel
+Logistic map Atlas | CPU | 122 fps | 64x64 | x
 ```
 
-## 5. 性能
+这里修掉了一个关键 bug：程序化销毁双摆窗口时 `WM_DESTROY` 会调用 closefn，
+导致一次模型切换直接退出程序。现在 `pendulum_view_destroy` 先清空 closefn/keyfn。
 
-- 64×64 角度图：**142–147 fps**（CPU 线程池，1–8 步/帧）；
-- 质量图：约 100–144 fps；
-- 500 步 64×64 离线渲染：几十毫秒；
-- CPU 每步在 64×64 上约 2 ms（8 线程），UI 帧预算充足；
-- 256×256 计算量约 16 倍，CPU 仍可运行但会明显变慢；GPU compute atlas 尚未接入 GUI。
+![模型面板](shot-model-panel.png)
 
-## 6. 物理验收
+## 7. 面板参数页
 
-- 静止能量：m1=m2=l1=l2=1，g=9.81，θ=0 → E=-29.43 J；
-- damping=0、dt=0.001、2000 步：能量相对漂移 < 1e-3；
-- 双摆 RK4 仍与 C 参考/Fortran 对照自检通过；
-- 质量轴时每格参数独立存储，能量/敏感性使用该格的质量，不使用全局统一值。
+![参数页](shot-panel-params.png)
 
-## 7. 低分辨率锐利度
+- X/Y 轴 combo；
+- 范围、Res、dt、Steps/frame；
+- 双摆 10 个参数两列布局；
+- Apply parameters；
+- 面板高度从 540 提到 620，解决模型行加入后 l2/g/damping 被裁切的问题。
 
-历史问题（场纹理 `GL_LINEAR` 放大）仍然保留修复：当前 atlas 纹理是 `GL_NEAREST`，
-64×64 放大后是清晰方块。旧的 before/after 仍可参考：
+## 8. 性能
 
-| before | after |
-| --- | --- |
-| ![before](blur-before.png) | ![after](blur-after.png) |
+- 双摆 64×64：142–147 fps；
+- Logistic/Hénon 64×64：140+ fps；
+- 64×64 双摆每步约 2 ms（8 线程）；
+- 256×256 CPU 仍可算，但约 16 倍成本，GPU compute 未接 GUI。
 
-## 8. 本次修掉的实现问题
+## 9. 本次修掉的问题
 
 | 问题 | 根因 | 修复 |
 | --- | --- | --- |
-| GUI atlas 黑屏、只有网格 | 没有调用 `gpu_set_res`，fullscreen VAO 为 0 | 在 build_modern 中创建 VAO |
-| atlas 26 fps | 单线程 RK4 | 行带线程池，142 fps |
-| post range 全红/无对比 | 固定 *res/span 缩放，线性场内部恒定 | 两遍自动 min/max；mass 预设改用 omega_max |
-| 参数页被裁切 | 10 行单列 + 固定高度 | 两列参数 + 集成参数行 |
-| Tcl 查询 axes/view 只有一个元素 | 返回字符串外层多了一对 {} | 返回不带外层 braces 的列表 |
-| staging 14.9 MB / 嵌套 tcl8.6 | Copy-Item 目标已存在导致嵌套 | 先建目标目录，复制内容；stage 9.9 MB |
-| 能量显示类型不匹配 | float[4] 传给 double[4] | 局部 double 转换 |
+| 通用 Atlas 质量/颜色错误 | 把 double state/vals 用 memcpy 写进 float cells | 逐元素转换 |
+| 模型切换后程序退出 | 销毁双摆窗口触发 closefn → app 退出 | destroy 前清空 closefn/keyfn |
+| 模型下拉只显示 “Double” | models 列表里 title 未加花括号，Tcl lassign 截断 | 返回 `{id {title}}` |
+| 参数页底部被裁 | 新增 Model 行占用高度 | 面板客户区 620；参数页完整 |
+| 模型切换后双摆窗口不复现 | 只在 app_create 创建 pview | app_set_model 中按模型创建/销毁 |
+| Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/palette.lua |
 
-## 9. 已知边界
+## 10. 已知边界
 
-1. 模型仍只有内置双摆；没有第二个模型/表达式 DSL。
-2. GUI 采样是 CPU；旧 GPU compute 只用于 selftest，不是 GUI 后端。
-3. Lua 目前只提供调色板/meta；参数 schema 在 C。
-4. 没有 colorbar、轴标签、单位、导出 CSV/PNG、保存实验。
-5. 能量通道固定 ±50 J；极端质量/长度可能饱和。
-6. 没有 3D 切片/滑块。
-7. exe 未签名；zip 首次运行可能触发 SmartScreen。
+1. Lua 仍是 palette/meta，不是模型 DSL。
+2. 只有三个内置模型，无表达式模型。
+3. GUI 采样 CPU；GPU compute 未接。
+4. Logistic/Hénon 没有专用 inspector，只有面板/状态。
+5. 没有 colorbar、轴标签/单位、CSV/PNG、保存实验。
+6. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
+7. 没有 3D 切片/连续化。
 
-## 10. 复现
+## 11. 复现
 
 ```powershell
 pwsh -File build.ps1
 .\dist\dp-phase\dp-phase.exe
+.\dist\dp-phase\dp-phase.exe /model logistic
+.\dist\dp-phase\dp-phase.exe /model henon
 .\dist\dp-phase\dp-phase.exe /selftest
 .\dist\dp-phase\dp-phase.exe /gpu-selftest
 
-# 角度/质量图离屏
-.\dist\dp-phase\dp-phase.exe /shot angle.bmp /res 64 /steps 300
-.\dist\dp-phase\dp-phase.exe /shot mass.bmp /res 64 /steps 300 /axisx m1 /axisy m2 /channel omega_max /post range
+# 离屏
+.\dist\dp-phase\dp-phase.exe /shot logi.bmp /model logistic /steps 200 /channel lyapunov
+.\dist\dp-phase\dp-phase.exe /shot henon.bmp /model henon /steps 200 /channel radius
 ```

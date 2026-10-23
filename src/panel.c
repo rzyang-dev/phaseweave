@@ -110,7 +110,7 @@ static int cmd_status(ClientData cd, Tcl_Interp *ip, int objc, Tcl_Obj *const ob
     memset(&st, 0, sizeof(st));
     st.zoom = 1.0;
     strcpy(st.scheme, "phase");
-    strcpy(st.source, "experiments/double-pendulum.lua");
+    strcpy(st.source, "experiments/palette.lua");
     if (p->cb.status) p->cb.status(p->cb.user, &st);
 
     list = Tcl_NewListObj(0, NULL);

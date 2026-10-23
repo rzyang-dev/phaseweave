@@ -1,49 +1,43 @@
-/* experiment.c - double-pendulum experiment schema and axis mapping */
+/* experiment.c - parameter schema/axes for a selected Model */
 #include "experiment.h"
-
-#include "model_dp.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
-static void add_param(Experiment *e, const char *name, const char *label, const char *unit,
-                      double value, double min, double max, double step, int group)
+void exp_init(Experiment *e, const Model *m)
 {
-    ExpParam *p;
-    if (e->np >= EXP_MAX_PARAMS) return;
-    p = &e->p[e->np++];
-    memset(p, 0, sizeof(*p));
-    strncpy(p->name, name, sizeof(p->name) - 1);
-    strncpy(p->label, label, sizeof(p->label) - 1);
-    strncpy(p->unit, unit, sizeof(p->unit) - 1);
-    p->value = value;
-    p->min = min; p->max = max; p->step = step;
-    p->axis_ok = 1;
-    p->group = group;
-}
-
-void exp_init(Experiment *e)
-{
+    int i, ax = 0, ay = 1;
     if (!e) return;
     memset(e, 0, sizeof(*e));
-    strcpy(e->title, "Double pendulum");
-    strcpy(e->model, "double_pendulum");
-    e->np = 0;
-    add_param(e, "theta1", "theta1", "rad",  0.5, -DP_PI, DP_PI, 0.01, 0);
-    add_param(e, "theta2", "theta2", "rad",  0.0, -DP_PI, DP_PI, 0.01, 0);
-    add_param(e, "omega1", "omega1", "rad/s",0.0, -10.0, 10.0, 0.01, 0);
-    add_param(e, "omega2", "omega2", "rad/s",0.0, -10.0, 10.0, 0.01, 0);
-    add_param(e, "m1", "m1", "kg", 1.0, 0.2, 3.0, 0.01, 1);
-    add_param(e, "m2", "m2", "kg", 1.0, 0.2, 3.0, 0.01, 1);
-    add_param(e, "l1", "l1", "m",  1.0, 0.2, 2.0, 0.01, 1);
-    add_param(e, "l2", "l2", "m",  1.0, 0.2, 2.0, 0.01, 1);
-    add_param(e, "g",  "g",  "m/s2",9.81, 0.0, 20.0, 0.1, 1);
-    add_param(e, "damping", "damping", "", 0.0, 0.0, 1.0, 0.01, 1);
-    e->axis_x = 0;
-    e->axis_y = 1;
-    e->xmin = e->p[0].min; e->xmax = e->p[0].max;
-    e->ymin = e->p[1].min; e->ymax = e->p[1].max;
+    e->mdl = m ? m : &DP_MODEL;
+    strncpy(e->model, e->mdl->id, sizeof(e->model) - 1);
+    strncpy(e->title, e->mdl->title, sizeof(e->title) - 1);
+    e->np = e->mdl->nparams;
+    if (e->np > EXP_MAX_PARAMS) e->np = EXP_MAX_PARAMS;
+    for (i = 0; i < e->np; ++i) {
+        const ModelParamDef *d = &e->mdl->params[i];
+        ExpParam *p = &e->p[i];
+        memset(p, 0, sizeof(*p));
+        strncpy(p->name, d->name, sizeof(p->name) - 1);
+        strncpy(p->label, d->label, sizeof(p->label) - 1);
+        strncpy(p->unit, d->unit, sizeof(p->unit) - 1);
+        p->value = d->def;
+        p->min = d->min; p->max = d->max; p->step = d->step;
+        p->axis_ok = d->axis_ok;
+        p->group = d->group;
+    }
+    e->nch = e->mdl->nchannels;
+    if (e->nch > EXP_NCH) e->nch = EXP_NCH;
+
+    for (i = 0; i < e->np; ++i) if (e->p[i].axis_ok) { ax = i; break; }
+    for (i = ax + 1; i < e->np; ++i) if (e->p[i].axis_ok) { ay = i; break; }
+    if (ay == ax) ay = (ax + 1 < e->np) ? ax + 1 : ax;
+    e->axis_x = ax;
+    e->axis_y = ay;
+    e->xmin = e->p[ax].min; e->xmax = e->p[ax].max;
+    e->ymin = e->p[ay].min; e->ymax = e->p[ay].max;
+
     e->res = 64;
     e->dt = 0.01;
     e->max_steps = 8;
@@ -116,48 +110,31 @@ void exp_axis_values(const Experiment *e, int ix, int iy, double vals[EXP_MAX_PA
     vals[e->axis_y] = e->ymin + v * (e->ymax - e->ymin);
 }
 
-void exp_cell_state(const Experiment *e, int ix, int iy, double state[4], double params[6])
+void exp_cell_state(const Experiment *e, int ix, int iy, double state[MODEL_MAX_STATE],
+                    double vals[EXP_MAX_PARAMS])
 {
-    DpModelValues v;
-    double vals[EXP_MAX_PARAMS];
-    if (!e || !state || !params) return;
+    if (!e || !state || !vals) return;
     exp_axis_values(e, ix, iy, vals);
-    v.theta1 = vals[exp_index(e, "theta1")];
-    v.theta2 = vals[exp_index(e, "theta2")];
-    v.omega1 = vals[exp_index(e, "omega1")];
-    v.omega2 = vals[exp_index(e, "omega2")];
-    v.m1 = vals[exp_index(e, "m1")];
-    v.m2 = vals[exp_index(e, "m2")];
-    v.l1 = vals[exp_index(e, "l1")];
-    v.l2 = vals[exp_index(e, "l2")];
-    v.g = vals[exp_index(e, "g")];
-    v.damping = vals[exp_index(e, "damping")];
-    model_dp_state(&v, state);
-    params[0] = v.m1; params[1] = v.m2;
-    params[2] = v.l1; params[3] = v.l2;
-    params[4] = v.g; params[5] = v.damping;
+    e->mdl->init(e->mdl, vals, state);
 }
 
-const char *exp_channel_name(int ch)
+const char *exp_channel_name(const Experiment *e, int ch)
 {
-    switch (ch) {
-    case 0: return "theta1";
-    case 1: return "theta2";
-    case 2: return "energy";
-    case 3: return "omega_max";
-    default: return "theta1";
-    }
+    if (!e || ch < 0 || ch >= e->nch) ch = 0;
+    return e->mdl->channels[ch].name;
 }
 
 int exp_channel_info(const Experiment *e, int ch, ExpChannelInfo *out)
 {
-    if (!out) return 0;
-    if (ch < 0 || ch >= EXP_NCH) ch = 0;
-    out->cyclic = 0;
-    if (ch == 0) { out->name="theta1"; out->label="theta1"; out->unit="rad"; out->min=-DP_PI; out->max=DP_PI; out->cyclic=1; }
-    else if (ch == 1) { out->name="theta2"; out->label="theta2"; out->unit="rad"; out->min=-DP_PI; out->max=DP_PI; out->cyclic=1; }
-    else if (ch == 2) { out->name="energy"; out->label="energy"; out->unit="J"; out->min=-50.0; out->max=50.0; }
-    else { out->name="omega_max"; out->label="max |omega|"; out->unit="rad/s"; out->min=0.0; out->max=20.0; }
-    (void)e;
+    const ModelChannelDef *d;
+    if (!e || !out) return 0;
+    if (ch < 0 || ch >= e->nch) ch = 0;
+    d = &e->mdl->channels[ch];
+    out->name = d->name;
+    out->label = d->label;
+    out->unit = d->unit;
+    out->min = d->min;
+    out->max = d->max;
+    out->cyclic = d->cyclic;
     return 1;
 }

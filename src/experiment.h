@@ -3,9 +3,10 @@
 #define DP_EXPERIMENT_H
 
 #include "core.h"
+#include "model.h"
 
-#define EXP_MAX_PARAMS 12
-#define EXP_NCH 4
+#define EXP_MAX_PARAMS MODEL_MAX_PARAMS
+#define EXP_NCH        MODEL_MAX_CHANNELS
 #define EXP_NAME 24
 #define EXP_LABEL 32
 
@@ -23,6 +24,8 @@ typedef struct {
     char title[80];
     char model[32];
 
+    const Model *mdl;
+
     ExpParam p[EXP_MAX_PARAMS];
     int np;
 
@@ -31,10 +34,11 @@ typedef struct {
 
     int res;
     double dt;
-    int max_steps;      /* integration steps per frame */
+    int max_steps;
     int paused;
 
-    int channel;        /* 0 theta1, 1 theta2, 2 energy, 3 omega_max */
+    int nch;
+    int channel;
     int post;           /* 0 raw, 1 gradient, 2 range, 3 variance */
 
     int grid, periodic, circle;
@@ -52,15 +56,16 @@ typedef struct {
     int cyclic;
 } ExpChannelInfo;
 
-void exp_init(Experiment *e);
+void exp_init(Experiment *e, const Model *m);
 int  exp_index(const Experiment *e, const char *name);
 double exp_value(const Experiment *e, const char *name);
 int  exp_set_value(Experiment *e, const char *name, double v);
-int  exp_set_axis(Experiment *e, int which, const char *name); /* which 0=x,1=y */
+int  exp_set_axis(Experiment *e, int which, const char *name);
 void exp_set_range(Experiment *e, int which, double lo, double hi);
 void exp_axis_values(const Experiment *e, int ix, int iy, double vals[EXP_MAX_PARAMS]);
-void exp_cell_state(const Experiment *e, int ix, int iy, double state[4], double params[6]);
-const char *exp_channel_name(int ch);
+void exp_cell_state(const Experiment *e, int ix, int iy, double state[MODEL_MAX_STATE],
+                    double vals[EXP_MAX_PARAMS]);
+const char *exp_channel_name(const Experiment *e, int ch);
 int exp_channel_info(const Experiment *e, int ch, ExpChannelInfo *out);
 
 #endif
