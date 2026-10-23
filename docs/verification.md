@@ -6,18 +6,18 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ## 1. 构建
 
 ```text
-[3/6] compiling C skeleton (20 objects)
+[3/6] compiling C skeleton (21 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (717,824 bytes)
+OK -> dist/dp-phase/dp-phase.exe (763,392 bytes)
       staged 10.0 MB
-      dist/dp-phase-1.5.0.zip (3.6 MB)
+      dist/dp-phase-1.6.0.zip (3.6 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 717,824 B |
+| exe | 763,392 B |
 | zip | 约 3.7 MB（docs 改动会改变 zip 字节数） |
-| 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll |
+| 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
 | 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/palette.lua |
 
@@ -108,11 +108,34 @@ Logistic map Atlas | CPU | 122 fps | 64x64 | x
 
 ![参数页](shot-panel-params.png)
 
+### 7.1 颜色条 / Inspect / 导出
+
+![View 颜色条](shot-panel.png)
+
+- 颜色条来自当前调色板 LUT，标签/单位/范围来自模型通道；
+- 轴读数 `X theta1 [-3.142, 3.142]  Y theta2 [-3.142, 3.142]`；
+- 右键选中后 **Inspect** 页显示 cell、x/y、状态、通道；
+- 这是 Logistic/Hénon 的检查器，不再需要独立窗口。
+
+![Inspect](shot-panel-inspect.png)
+
+导出实测（双摆 64×64）：
+
+```text
+exports/atlas-20261024-011301.png  7,163 B  PNG signature 89 50 4E 47, 64×64
+exports/atlas-20261024-011302.csv  567,991 B
+model,ix,iy,x_theta1,y_theta2,state_theta1,state_theta2,...,ch_theta1,ch_theta2,...
+```
+
+PNG 是 zlib 压缩的最小 RGBA writer；CSV 列有 `x_`/`y_`/`state_`/`ch_` 前缀，
+避免模型同名通道混淆。导出固定到 exe 旁 `exports/`，面板 Last 显示路径。
+
 - X/Y 轴 combo；
 - 范围、Res、dt、Steps/frame；
 - 双摆 10 个参数两列布局；
 - Apply parameters；
 - 面板高度从 540 提到 620，解决模型行加入后 l2/g/damping 被裁切的问题。
+- View 页加入颜色条、轴读数和 Export PNG/CSV；选中值移到独立 **Inspect** 页，避免 View 高度溢出。
 
 ## 8. 性能
 
@@ -130,6 +153,10 @@ Logistic map Atlas | CPU | 122 fps | 64x64 | x
 | 模型下拉只显示 “Double” | models 列表里 title 未加花括号，Tcl lassign 截断 | 返回 `{id {title}}` |
 | 参数页底部被裁 | 新增 Model 行占用高度 | 面板客户区 620；参数页完整 |
 | 模型切换后双摆窗口不复现 | 只在 app_create 创建 pview | app_set_model 中按模型创建/销毁 |
+| 颜色条 Tcl 报错 | ttk::canvas 不存在 | 改用经典 canvas |
+| 轴读数/选中值不更新 | Tcl 双引号里 `[%.4g...]` 被当命令 | 用 `format {..}` + 分离 catch |
+| 选中值控件路径写错 | `.sel.l` vs `.self.l` | 改为 Inspect 页 `.f.nb.insp.txt` |
+| CSV 列名冲突 | x/y/state/channel 同名 | 加 `x_/y_/state_/ch_` 前缀 |
 | Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/palette.lua |
 
 ## 10. 已知边界
@@ -137,8 +164,8 @@ Logistic map Atlas | CPU | 122 fps | 64x64 | x
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
 3. GUI 采样 CPU；GPU compute 未接。
-4. Logistic/Hénon 没有专用 inspector，只有面板/状态。
-5. 没有 colorbar、轴标签/单位、CSV/PNG、保存实验。
+4. Logistic/Hénon 只有面板 Inspect，没有独立窗口 inspector。
+5. 没有文件选择对话框、实验保存/加载；PNG 只包含 atlas。
 6. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
 7. 没有 3D 切片/连续化。
 

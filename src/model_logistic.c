@@ -1,6 +1,8 @@
 /* model_logistic.c - logistic map x <- r*x*(1-x), with finite-time Lyapunov */
 #include "model.h"
 
+#include <stddef.h>
+
 #include <math.h>
 
 static const ModelParamDef logistic_params[] = {
@@ -61,6 +63,7 @@ const Model LOGISTIC_MODEL = {
     logistic_params,
     (int)(sizeof(logistic_channels) / sizeof(logistic_channels[0])),
     logistic_channels,
+    { "x", NULL, NULL, NULL },
     logistic_init,
     logistic_step,
     logistic_channels_fn

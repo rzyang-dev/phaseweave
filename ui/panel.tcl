@@ -78,8 +78,22 @@ bind .f.nb.view.ch <<ComboboxSelected>> {act channel_set [.f.nb.view.ch get]}
 bind .f.nb.view.post <<ComboboxSelected>> {act post_set [.f.nb.view.post get]}
 bind .f.nb.view.pal <<ComboboxSelected>> {act palette_set [.f.nb.view.pal get]}
 
+ttk::frame .f.nb.view.cbar
+grid .f.nb.view.cbar -row 4 -column 0 -columnspan 2 -sticky ew -pady {6 0}
+ttk::label .f.nb.view.cbar.name -text "color" -font DpSmall -anchor w
+ttk::label .f.nb.view.cbar.max -text "" -font DpSmall -anchor e
+canvas .f.nb.view.cbar.c -height 12 -highlightthickness 1 -highlightbackground "#999" -background "#ddd"
+ttk::label .f.nb.view.cbar.min -text "" -font DpSmall -anchor w
+grid .f.nb.view.cbar.name -row 0 -column 0 -sticky w
+grid .f.nb.view.cbar.max -row 0 -column 1 -sticky e
+grid .f.nb.view.cbar.c -row 1 -column 0 -columnspan 2 -sticky ew
+grid .f.nb.view.cbar.min -row 2 -column 0 -sticky w
+grid .f.nb.view.cbar.max -row 2 -column 1 -sticky e
+grid columnconfigure .f.nb.view.cbar 1 -weight 1
+bind .f.nb.view.cbar.c <Configure> {draw_colorbar}
+
 ttk::frame .f.nb.view.checks
-grid .f.nb.view.checks -row 4 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+grid .f.nb.view.checks -row 5 -column 0 -columnspan 2 -sticky ew -pady {4 0}
 ttk::checkbutton .f.nb.view.checks.g -text "Grid" -variable ::vGrid -command {act grid $::vGrid} -takefocus 0
 ttk::checkbutton .f.nb.view.checks.p -text "Periodic" -variable ::vPeriodic -command {act periodic $::vPeriodic} -takefocus 0
 ttk::checkbutton .f.nb.view.checks.c -text "Circle" -variable ::vCircle -command {act circle $::vCircle} -takefocus 0
@@ -87,9 +101,9 @@ grid .f.nb.view.checks.g -row 0 -column 0 -sticky w
 grid .f.nb.view.checks.p -row 0 -column 1 -sticky w -padx 6
 grid .f.nb.view.checks.c -row 0 -column 2 -sticky w
 ttk::button .f.nb.view.rv -text "Reset view" -command {act view_reset} -takefocus 0
-grid .f.nb.view.rv -row 5 -column 0 -columnspan 2 -sticky w -pady {4 0}
+grid .f.nb.view.rv -row 6 -column 0 -columnspan 2 -sticky w -pady {4 0}
 ttk::frame .f.nb.view.presets
-grid .f.nb.view.presets -row 6 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+grid .f.nb.view.presets -row 7 -column 0 -columnspan 2 -sticky ew -pady {4 0}
 ttk::button .f.nb.view.presets.a -text "Angle map" -command {preset angles} -takefocus 0
 ttk::button .f.nb.view.presets.m -text "Mass map" -command {preset masses} -takefocus 0
 grid .f.nb.view.presets.a -row 0 -column 0 -sticky ew -padx {0 3}
@@ -97,8 +111,28 @@ grid .f.nb.view.presets.m -row 0 -column 1 -sticky ew -padx {3 0}
 grid columnconfigure .f.nb.view.presets 0 -weight 1
 grid columnconfigure .f.nb.view.presets 1 -weight 1
 
+ttk::frame .f.nb.view.exports
+grid .f.nb.view.exports -row 8 -column 0 -columnspan 2 -sticky ew -pady {6 0}
+ttk::button .f.nb.view.exports.png -text "Export PNG" -command {act export_png} -takefocus 0
+ttk::button .f.nb.view.exports.csv -text "Export CSV" -command {act export_csv} -takefocus 0
+grid .f.nb.view.exports.png -row 0 -column 0 -sticky ew -padx {0 3}
+grid .f.nb.view.exports.csv -row 0 -column 1 -sticky ew -padx {3 0}
+grid columnconfigure .f.nb.view.exports 0 -weight 1
+grid columnconfigure .f.nb.view.exports 1 -weight 1
+
 ttk::label .f.nb.view.hint -text "Mouse: drag=pan, wheel=zoom, right-click=pick. Keyboard: R Space C G P O 0 F5 Esc." -font DpSmall -foreground "#555" -wraplength 320 -justify left
-grid .f.nb.view.hint -row 7 -column 0 -columnspan 2 -sticky ew -pady {12 0}
+grid .f.nb.view.hint -row 9 -column 0 -columnspan 2 -sticky ew -pady {8 0}
+ttk::label .f.nb.view.axes -text "" -font DpSmall -foreground "#555" -anchor w -wraplength 330
+grid .f.nb.view.axes -row 10 -column 0 -columnspan 2 -sticky ew
+ttk::frame .f.nb.insp -padding 8
+ttk::label .f.nb.insp.h -text "Selected pixel" -font DpTitle -anchor w
+grid .f.nb.insp.h -row 0 -column 0 -sticky ew
+ttk::label .f.nb.insp.txt -text "click a pixel to inspect" -font DpMono -foreground "#222" -justify left -anchor nw -wraplength 330
+grid .f.nb.insp.txt -row 1 -column 0 -sticky nsew -pady {6 0}
+ttk::label .f.nb.insp.hint -text "Right-click the atlas to update this panel." -font DpSmall -foreground "#555" -wraplength 330 -justify left
+grid .f.nb.insp.hint -row 2 -column 0 -sticky ew -pady {8 0}
+grid rowconfigure .f.nb.insp 1 -weight 1
+grid columnconfigure .f.nb.insp 0 -weight 1
 
 # ---------------------------------------------------------- Parameters tab
 ttk::frame .f.nb.par -padding 8
@@ -182,12 +216,37 @@ grid .f.stat.last -row 3 -column 0 -sticky ew -pady {2 0}
 .f.nb add .f.nb.view -text "View"
 .f.nb add .f.nb.par -text "Parameters"
 .f.nb add .f.nb.script -text "Script"
+.f.nb add .f.nb.insp -text "Inspect"
 .f.nb select .f.nb.view
 
 proc call {name {value ""}} {
     set m [dp_action $name $value]
     if {$m ne ""} { set ::last $m }
     return $m
+}
+
+proc draw_colorbar {} {
+    set c .f.nb.view.cbar.c
+    set pal [dp_query palette]
+    set n [llength $pal]
+    if {$n < 1} { return }
+    set w [winfo width $c]
+    if {$w < 2} { set w 330 }
+    $c delete all
+    for {set i 0} {$i < $n} {incr i} {
+        set x0 [expr {$w * $i / $n}]
+        set x1 [expr {$w * ($i + 1) / $n}]
+        $c create rectangle $x0 0 $x1 12 -fill [lindex $pal $i] -outline ""
+    }
+    set idx [.f.nb.view.ch current]
+    if {$idx < 0} { set idx 0 }
+    set ch [lindex [dp_query channels] $idx]
+    if {$ch eq ""} { return }
+    lassign $ch name label unit mn mx cyc
+    if {$unit ne ""} { set unit " $unit" }
+    .f.nb.view.cbar.name configure -text "$label"
+    .f.nb.view.cbar.min configure -text [format "%.4g%s" $mn $unit]
+    .f.nb.view.cbar.max configure -text [format "%.4g%s" $mx $unit]
 }
 
 proc update_ui {} {
@@ -207,6 +266,13 @@ proc update_ui {} {
         .f.nb.view.post set $post
         .f.nb.view.pal set $pal
         .f.stat.line3 configure -text "$ch  |  $post"
+        catch {draw_colorbar}
+    }
+    if {[catch {lassign [dp_query axes] ax ay xmn xmx ymn ymx}] == 0} {
+        .f.nb.view.axes configure -text [format {X %s [%.4g, %.4g]    Y %s [%.4g, %.4g]} $ax $xmn $xmx $ay $ymn $ymx]
+    }
+    if {[catch {set seltext [dp_query selected]}] == 0} {
+        .f.nb.insp.txt configure -text $seltext
     }
     if {$::s(last) ne ""} { set ::last $::s(last) }
     .f.stat.last configure -text "Last: $::last"

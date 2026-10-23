@@ -10,6 +10,7 @@
 #include "pendulum_view.h"
 #include "panel.h"
 #include "physics.h"
+#include "png.h"
 #include "platform.h"
 
 #include <stdarg.h>
@@ -294,6 +295,70 @@ static int parse_axis_range(const char *value, int *which, double *lo, double *h
     return *hi > *lo;
 }
 
+static int app_export_path(App *a, const char *ext, char *out, size_t outsz)
+{
+    char dir[MAX_PATH];
+    char base[MAX_PATH];
+    SYSTEMTIME t;
+    if (!a || !ext || !out || outsz == 0) return 0;
+    platform_exe_dir(dir, sizeof(dir));
+    snprintf(base, sizeof(base), "%s\\exports", dir);
+    CreateDirectoryA(base, NULL);
+    GetLocalTime(&t);
+    snprintf(out, outsz, "%s\\atlas-%04d%02d%02d-%02d%02d%02d.%s",
+             base, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, ext);
+    return 1;
+}
+
+static int app_export_png(App *a)
+{
+    char path[MAX_PATH], err[256];
+    if (!a || !a->atlas) { app_set_last(a, "export: no atlas"); return 0; }
+    if (!app_export_path(a, "png", path, sizeof(path))) return 0;
+    if (!png_write_rgba(path, atlas_rgba(a->atlas), atlas_res(a->atlas),
+                        atlas_res(a->atlas), err, sizeof(err))) {
+        app_set_last(a, err);
+        return 0;
+    }
+    app_set_last(a, path);
+    return 1;
+}
+
+static int app_export_csv(App *a)
+{
+    char path[MAX_PATH];
+    FILE *f;
+    int x, y, i;
+    if (!a || !a->atlas) { app_set_last(a, "export: no atlas"); return 0; }
+    if (!app_export_path(a, "csv", path, sizeof(path))) return 0;
+    f = fopen(path, "wb");
+    if (!f) { app_set_last(a, "export: cannot create csv"); return 0; }
+    fprintf(f, "model,ix,iy,x_%s,y_%s",
+            a->exp.p[a->exp.axis_x].name, a->exp.p[a->exp.axis_y].name);
+    for (i = 0; i < a->exp.mdl->state_dim && i < MODEL_MAX_STATE; ++i)
+        if (a->exp.mdl->state_names[i]) fprintf(f, ",state_%s", a->exp.mdl->state_names[i]);
+    for (i = 0; i < a->exp.nch; ++i) fprintf(f, ",ch_%s", exp_channel_name(&a->exp, i));
+    fprintf(f, "\n");
+    for (y = 0; y < atlas_res(a->atlas); ++y) {
+        for (x = 0; x < atlas_res(a->atlas); ++x) {
+            float st[MODEL_MAX_STATE], vals[MODEL_MAX_PARAMS], ch[MODEL_MAX_CHANNELS];
+            double axis_vals[MODEL_MAX_PARAMS];
+            int idx = y * atlas_res(a->atlas) + x;
+            atlas_read_cell(a->atlas, idx, st, vals, ch);
+            exp_axis_values(&a->exp, x, y, axis_vals);
+            fprintf(f, "%s,%d,%d,%.9g,%.9g", a->exp.mdl->id, x, y,
+                    axis_vals[a->exp.axis_x], axis_vals[a->exp.axis_y]);
+            for (i = 0; i < a->exp.mdl->state_dim && i < MODEL_MAX_STATE; ++i)
+                if (a->exp.mdl->state_names[i]) fprintf(f, ",%.9g", (double)st[i]);
+            for (i = 0; i < a->exp.nch; ++i) fprintf(f, ",%.9g", (double)ch[i]);
+            fprintf(f, "\n");
+        }
+    }
+    fclose(f);
+    app_set_last(a, path);
+    return 1;
+}
+
 static int app_do_action(App *a, const char *name, const char *value)
 {
     if (!a || !name) return 0;
@@ -444,6 +509,8 @@ static int app_do_action(App *a, const char *name, const char *value)
         app_set_model(a, value);
         return 1;
     }
+    if (strcmp(name, "export_png") == 0) { app_export_png(a); return 1; }
+    if (strcmp(name, "export_csv") == 0) { app_export_csv(a); return 1; }
     if (strcmp(name, "apply") == 0) { app_apply_experiment(a); return 1; }
     app_set_last(a, "unknown action");
     return 0;
@@ -570,7 +637,7 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
         for (i = 0; i < a->exp.nch; ++i) {
             ExpChannelInfo ci;
             exp_channel_info(&a->exp, i, &ci);
-            append_list(out, outsz, "{%s %s %s %.9g %.9g %d} ",
+            append_list(out, outsz, "{%s %s {%s} %.9g %.9g %d} ",
                         ci.name, ci.label, ci.unit, ci.min, ci.max, ci.cyclic);
         }
     } else if (strcmp(what, "view") == 0) {
@@ -588,6 +655,35 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
         }
     } else if (strcmp(what, "model") == 0) {
         append_list(out, outsz, "%s %s", a->exp.mdl->id, a->exp.mdl->title);
+    } else if (strcmp(what, "palette") == 0) {
+        for (i = 0; i < 32; ++i) {
+            int k = i * (DP_LUT_N - 1) / 31;
+            append_list(out, outsz, "#%02x%02x%02x ",
+                        a->lut[k * 3 + 0], a->lut[k * 3 + 1], a->lut[k * 3 + 2]);
+        }
+    } else if (strcmp(what, "selected") == 0) {
+        int n = 0, k;
+        if (a->selected < 0) {
+            snprintf(out, outsz, "click a pixel to inspect");
+            return;
+        }
+        n += snprintf(out + n, outsz - n, "cell (%d, %d)\n", a->sel_x, a->sel_y);
+        n += snprintf(out + n, outsz - n, "x: %s = %.6g    y: %s = %.6g\n",
+                      a->exp.p[a->exp.axis_x].name, a->sel_vals[a->exp.axis_x],
+                      a->exp.p[a->exp.axis_y].name, a->sel_vals[a->exp.axis_y]);
+        n += snprintf(out + n, outsz - n, "state:\n");
+        for (k = 0; k < a->exp.mdl->state_dim && k < MODEL_MAX_STATE; ++k) {
+            if (!a->exp.mdl->state_names[k]) continue;
+            n += snprintf(out + n, outsz - n, "  %s = %.6g\n",
+                          a->exp.mdl->state_names[k], a->sel_state[k]);
+        }
+        n += snprintf(out + n, outsz - n, "channels:\n");
+        for (k = 0; k < a->exp.nch; ++k) {
+            ExpChannelInfo ci;
+            exp_channel_info(&a->exp, k, &ci);
+            n += snprintf(out + n, outsz - n, "  %s = %.6g %s\n",
+                          ci.label, a->sel_ch[k], ci.unit);
+        }
     } else if (strcmp(what, "source") == 0) {
         append_list(out, outsz, "%s", a->hot_path[0] ? a->hot_path : "(none)");
     } else if (strcmp(what, "title") == 0) {

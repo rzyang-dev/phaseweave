@@ -77,6 +77,7 @@ const Model DP_MODEL = {
     dp_params,
     (int)(sizeof(dp_channels) / sizeof(dp_channels[0])),
     dp_channels,
+    { "theta1", "theta2", "omega1", "omega2" },
     dp_init,
     dp_step,
     dp_channels_fn

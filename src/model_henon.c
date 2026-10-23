@@ -1,6 +1,8 @@
 /* model_henon.c - Hénon map (a,b; x0,y0) */
 #include "model.h"
 
+#include <stddef.h>
+
 #include <math.h>
 
 static const ModelParamDef henon_params[] = {
@@ -63,6 +65,7 @@ const Model HENON_MODEL = {
     henon_params,
     (int)(sizeof(henon_channels) / sizeof(henon_channels[0])),
     henon_channels,
+    { "x", "y", NULL, NULL },
     henon_init,
     henon_step,
     henon_channels_fn

@@ -1,7 +1,7 @@
 # build.ps1 - Double Pendulum Phase Space -> dynamical-systems atlas
 #
 # Toolchain: C:\MinGW (GCC 6.3, gfortran, windres, objdump, Tcl/Tk 8.6).
-# Deliverable: dist/dp-phase/ (portable folder) + dist/dp-phase-1.5.0.zip.
+# Deliverable: dist/dp-phase/ (portable folder) + dist/dp-phase-1.6.0.zip.
 # Tcl/Tk is dynamically linked and shipped in the folder; no extraction at runtime.
 #
 #   .\build.ps1              build + self-test
@@ -110,7 +110,7 @@ $cflags = @(
 )
 $sources = @(
     'main.c', 'app.c', 'platform.c', 'experiment.c', 'atlas.c', 'model.c', 'model_dp.c', 'model_logistic.c', 'model_henon.c', 'sim.c', 'physics.c', 'pool.c',
-    'kernel_fortran.c', 'lua_hot.c', 'gpu.c', 'phase_view.c', 'pendulum_view.c', 'panel.c', 'bmp.c', 'selftest.c'
+    'kernel_fortran.c', 'lua_hot.c', 'gpu.c', 'phase_view.c', 'pendulum_view.c', 'panel.c', 'bmp.c', 'png.c', 'selftest.c'
 )
 $objects = @()
 foreach ($s in $sources) {
@@ -141,7 +141,7 @@ $exe = Join-Path $stage 'dp-phase.exe'
 $lflags = @(
     '-mwindows', '-static', '-static-libgcc', '-static-libgfortran',
     '-Wl,--gc-sections', '-Wl,--enable-stdcall-fixup', '-s',
-    '-lopengl32', '-lgdi32', '-luser32', '-lwinmm', '-llua', '-lm',
+    '-lopengl32', '-lgdi32', '-luser32', '-lwinmm', '-llua', '-lz', '-lm',
     '-ltk86', '-ltcl86'
 )
 Invoke-Tool $fc ($objects + @('-o', $exe) + $lflags) 'link'
@@ -170,7 +170,7 @@ Copy-Item (Join-Path $root 'README.md') $stage -Force -ErrorAction SilentlyConti
 Copy-Item (Join-Path $root 'docs') (Join-Path $stage 'docs') -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ("      staged {0:N1} MB" -f ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum / 1MB))
 
-$zip = Join-Path $dist 'dp-phase-1.5.0.zip'
+$zip = Join-Path $dist 'dp-phase-1.6.0.zip'
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
 Write-Host ("      {0}  ({1:N1} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))

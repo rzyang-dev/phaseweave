@@ -22,7 +22,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.5.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.6.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -91,14 +91,29 @@ x/y 可以是任意两个 eligible 参数：
 
 ![模型面板](docs/shot-panel.png)
 
-**View**：Color by、View（raw/gradient/range/variance）、Palette、Grid/Periodic/Circle、Reset view、Angle/Mass 预设。
+**View**：Model、Color by、View（raw/gradient/range/variance）、Palette、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV。
 
 **Parameters**：X/Y 轴、范围、Res、dt、Steps/frame、模型参数、Apply parameters。
 面板高度按屏幕自适应（1080p 下 620 客户区），双摆 10 个参数能完整显示。
 
+**Script**：`experiments/palette.lua`、Reload palette（F5）。
+
+**Inspect**：右键选中像素后显示 cell、x/y 轴值、状态和通道值；map 模型没有专用窗口，这个页就是它的检查器。
+
 ![参数面板](docs/shot-panel-params.png)
 
-**Script**：`experiments/palette.lua`、Reload palette（F5）。
+![选中值](docs/shot-panel-inspect.png)
+
+## 颜色条、选中值与导出
+
+- View 页底部有当前通道的颜色条，标签/单位/范围来自模型通道定义；
+- 轴读数显示 `X name [min, max]  Y name [min, max]`；
+- 右键点击地图，Inspect 页更新；
+- Export PNG：把当前 CPU 颜色化的 atlas 写成 8-bit RGBA PNG；
+- Export CSV：每格一行，列为
+  `model,ix,iy,x_<axis>,y_<axis>,state_<...>,ch_<...>`；
+- 导出目录是 exe 旁的 `exports/`，文件名带时间戳；面板 Last 显示完整路径；
+- 没有文件选择对话框，PNG 只包含 atlas，不包含面板/叠加线。
 
 ## 通道与后处理
 
@@ -138,7 +153,8 @@ src/app.c           窗口/帧循环/模型切换/选择/预设
 src/gpu.c           OpenGL 4.3 上下文、atlas RGBA 显示、线叠加
 src/phase_view.c    归一化 [0,1] 视图、pick、平移/缩放、格线/圆圈
 src/panel.c         Tcl/Tk 宿主与 dp_action/dp_status/dp_query
-ui/panel.tcl        三页动态面板 + Model 下拉
+src/png.c           最小 RGBA PNG 写入器（zlib）
+ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 experiments/        共享调色板脚本
 src/selftest.c      CPU 76 项；含 GPU 的 82 项
 ```
@@ -154,9 +170,9 @@ src/selftest.c      CPU 76 项；含 GPU 的 82 项
 
 1. Lua 仍是调色板/meta，不是模型 DSL。
 2. GUI 采样是 CPU；GPU compute atlas 未接。
-3. 地图模型没有专用 inspector；只有双摆有检查器。
-4. 没有 colorbar、轴标签/单位、CSV/PNG 导出、保存实验。
-5. 能量通道范围固定 ±50 J；极端参数会饱和。
+3. 地图模型没有独立窗口检查器；用面板 **Inspect** 页。
+4. 没有文件选择对话框、实验保存/加载；导出固定到 exe 旁 exports/。
+5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
 6. 没有 3D 切片/分岔连续化；目标是 2D 地图，不是 AUTO/MatCont 替代品。
 
 ## 仓库

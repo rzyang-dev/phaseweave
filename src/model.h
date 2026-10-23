@@ -35,6 +35,7 @@ typedef struct Model {
     const ModelParamDef *params;
     int nchannels;
     const ModelChannelDef *channels;
+    const char *state_names[MODEL_MAX_STATE];
 
     void (*init)(const struct Model *m, const double *vals, double state[MODEL_MAX_STATE]);
     void (*step)(const struct Model *m, double state[MODEL_MAX_STATE],

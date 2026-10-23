@@ -170,7 +170,17 @@ channels[4]
 Logistic/Hénon 只有地图 + 面板两窗口；双摆是三窗口。
 模型切换已实测：从双摆切 Logistic，双摆窗口关闭，面板 schema/标题更新。
 
-## 9. 面板
+## 9. 面板、颜色条、Inspect 与导出
+
+View 页有当前通道的颜色条（调色板 LUT 采样 + 模型范围/单位），底部轴读数显示
+`X axis [min,max]  Y axis [min,max]`。右键选点后，**Inspect** 页显示 cell、轴值、
+状态和通道值；map 模型没有独立窗口检查器，Inspect 就是它的检查器。
+
+Export PNG 写当前 CPU 颜色化的 RGBA8 atlas（最小 zlib PNG writer，不写叠加线/面板）；
+Export CSV 每格一行，列名前缀 `x_`/`y_`/`state_`/`ch_`，避免不同模型的同名通道冲突。
+文件写入 exe 旁的 `exports/`，带时间戳；没有文件选择对话框。
+
+## 10. 面板
 
 标题下 Model 下拉；三个 tab：
 
@@ -179,22 +189,22 @@ Logistic/Hénon 只有地图 + 面板两窗口；双摆是三窗口。
 - **Script**：`experiments/palette.lua`、Reload palette。
 
 Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
-面板通过 `dp_query params|axes|channels|models|model|view|integration` 拉 schema，
+面板通过 `dp_query params|axes|channels|models|model|view|integration|palette|selected` 拉 schema，
 不把模型字段硬编码进 Tcl。
 
-## 10. Lua
+## 11. Lua
 
 `experiments/palette.lua` 只负责调色板/meta；参数 schema 在 C 的 Model 表。
 F5 只重读调色板，不重置地图。下一步才把 experiment schema/表达式模型放进 Lua，
 并生成 CPU/GLSL 内核；当前每像素不解释 Lua。
 
-## 11. 打包
+## 12. 打包
 
-`build.ps1` 六步；C 20 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
+`build.ps1` 六步；C 21 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.7 MB，exe 约 718 KB。
+zip 约 3.7 MB，exe 约 763 KB。
 
-## 12. 物理与数值边界
+## 13. 物理与数值边界
 
 - 双摆 RK4、能量、C/Fortran 参考对照保留；
 - Logistic/Hénon 有已知不动点/有界性/Lyapunov 测试；
@@ -206,14 +216,15 @@ zip 约 3.7 MB，exe 约 718 KB。
 
 - 只有三个内置模型，无 Lua 表达式 DSL；
 - GUI 采样 CPU，GPU 只显示；
-- 没有 map 专用 inspector；
-- 无 colorbar/轴标签/单位/CSV/PNG/保存实验；
+- map 只有面板 Inspect，没有独立窗口 inspector；
+- 无文件选择对话框、实验保存/加载；PNG 只包含 atlas；
 - 能量范围固定；极端参数会饱和；
 - 无 3D 切片/分岔连续化。
 
-## 13. 路线
+## 14. 路线
 
-- M4：Lua experiment schema + 表达式模型 → CPU/GLSL 代码生成；
-- M5：colorbar/轴标签/导出/保存；
+- M4a（已完成）：colorbar、Inspect、轴读数、PNG/CSV 导出；
+- M4b：Lua experiment schema + 表达式模型 → CPU/GLSL 代码生成；
+- M5：实验保存/加载、导出预览、colorbar 细节；
 - M6：GPU compute atlas、FTLE/盆地、Poincaré、切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。
