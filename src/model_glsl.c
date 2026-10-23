@@ -96,6 +96,27 @@ static int henon(const Experiment *e, char *out, size_t outsz, size_t *pos)
     return 1;
 }
 
+static int standard(const Experiment *e, char *out, size_t outsz, size_t *pos)
+{
+    (void)e;
+    header(e, out, outsz, pos, 0);
+    app(out, outsz, pos,
+        "  float th = cells[i*16+0];\n"
+        "  float p = cells[i*16+1];\n"
+        "  float k = cells[i*16+4];\n"
+        "  for (int s=0; s<uSteps; ++s) {\n"
+        "    p = p + k*sin(th);\n"
+        "    th = th + p;\n"
+        "    th = mod(th + 3.141592653589793, 6.283185307179586) - 3.141592653589793;\n"
+        "    if (isnan(th) || isnan(p) || isinf(th) || isinf(p) || abs(p) > 1e6) { th = 0.0; p = 0.0; }\n"
+        "  }\n"
+        "  cells[i*16+0]=th; cells[i*16+1]=p;\n"
+        "  chans[i*4+0]=th; chans[i*4+1]=p;\n"
+        "  chans[i*4+2]=abs(p); chans[i*4+3]=cos(th);\n"
+        "}\n");
+    return 1;
+}
+
 static int dp(const Experiment *e, char *out, size_t outsz, size_t *pos)
 {
     (void)e;
@@ -163,6 +184,7 @@ int model_builtin_glsl(const Experiment *e, char *out, size_t outsz,
     if (!e || !out || outsz == 0) return 0;
     if (strcmp(e->model, "logistic") == 0) ok = logistic(e, out, outsz, &pos);
     else if (strcmp(e->model, "henon") == 0) ok = henon(e, out, outsz, &pos);
+    else if (strcmp(e->model, "standard") == 0) ok = standard(e, out, outsz, &pos);
     else if (strcmp(e->model, "double_pendulum") == 0) ok = dp(e, out, outsz, &pos);
     else {
         if (err) snprintf(err, errsz, "no built-in GPU shader for model %s", e->model);

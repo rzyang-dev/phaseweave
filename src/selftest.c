@@ -10,6 +10,7 @@
 #include "lua_hot.h"
 #include "model_custom.h"
 #include "model_glsl.h"
+#include "model_standard.h"
 #include "phase_view.h"
 #include "session.h"
 #include "physics.h"
@@ -241,9 +242,10 @@ static void test_maps(void)
     int i;
 
     printf("-- map models\n");
-    check(model_count() == 3, "three models are registered");
+    check(model_count() == 4, "four models are registered");
     check(model_by_id("logistic") == &LOGISTIC_MODEL, "logistic lookup");
     check(model_by_id("henon") == &HENON_MODEL, "henon lookup");
+    check(model_by_id("standard") == &STANDARD_MODEL, "standard lookup");
 
     memset(vals, 0, sizeof(vals));
     vals[0] = 2.5; vals[1] = 0.5;
@@ -267,6 +269,13 @@ static void test_maps(void)
     HENON_MODEL.observe(&HENON_MODEL, state, vals, ch);
     check(ch[2] >= 0.0f && ch[2] < 3.0f, "henon radius channel");
 
+    {
+        double sv[MODEL_MAX_PARAMS] = { 0.5, 0.1, 0.2 };
+        double st[MODEL_MAX_STATE];
+        STANDARD_MODEL.init(&STANDARD_MODEL, sv, st);
+        STANDARD_MODEL.step(&STANDARD_MODEL, st, sv, 0.0, 1);
+        check(fabs(st[1] - (0.2 + 0.5*sin(0.1))) < 1e-12, "standard map p update");
+    }
     exp_init(&e, &LOGISTIC_MODEL);
     e.res = 16;
     a = atlas_create(&e, e.res, err, sizeof(err));
@@ -989,6 +998,7 @@ static void test_gpu_custom(Gpu *g)
     test_gpu_builtin(g, &LOGISTIC_MODEL, "logistic GPU atlas matches CPU");
     test_gpu_builtin(g, &HENON_MODEL, "henon GPU atlas matches CPU");
     test_gpu_builtin(g, &DP_MODEL, "double-pendulum GPU atlas matches CPU");
+    test_gpu_builtin(g, &STANDARD_MODEL, "standard GPU atlas matches CPU");
 }
 
 static void test_gpu(void)

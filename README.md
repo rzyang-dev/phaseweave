@@ -1,17 +1,18 @@
-# 动力学系统地图实验箱 · 双摆 / Logistic / Hénon / Lua 表达式模型
+# 动力学系统地图实验箱 · 双摆 / Logistic / Hénon / Standard map / Lua 表达式模型
 
 一个 **二维参数/初值地图（2D map）** 实验框架：
 
 > 选模型 → 选两个参数/初值作为 x/y → 每个像素积分 → 多通道观测量 →
 > 后处理 + 调色板 → 右键选像素看轨道/状态。
 
-三种内置模型和 Lua 自定义表达式模型共享同一套 Experiment/Atlas/View/Panel：
+四种内置模型和 Lua 自定义表达式模型共享同一套 Experiment/Atlas/View/Panel：
 
 | 模型 | 类型 | 默认 x/y 轴 | 参数 | 通道 |
 | --- | --- | --- | --- | --- |
 | Double pendulum | ODE | θ1 / θ2 | θ1, θ2, ω1, ω2, m1, m2, l1, l2, g, damping | θ1, θ2, energy, omega_max |
 | Logistic map | map | r / x0 | r, x0 | x, lyapunov, mean, |x| |
 | Hénon map | map | a / b | a, b, x0, y0 | x, y, radius, |x| |
+| Standard map | map | k / p0 | k, theta0, p0 | theta, p, |p|, cos(theta) |
 | Lua Hénon (custom) | Lua map | a / b | a, b, x0, y0 | x, y, radius, |x| |
 
 双摆窗口只对双摆模型存在；Logistic/Hénon/Lua 自定义模型是“地图 + 参数面板”两窗口。
@@ -23,12 +24,13 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.22.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.23.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
 .\dist\run\dp-phase\dp-phase.exe /model logistic
 .\dist\run\dp-phase\dp-phase.exe /model henon
+.\dist\run\dp-phase\dp-phase.exe /model standard
 .\dist\run\dp-phase\dp-phase.exe /model custom
 ```
 
@@ -82,6 +84,22 @@ x/y 可以是任意两个 eligible 参数：
 
 ![Hénon map](docs/shot-henon.png)
 
+### Standard map
+
+Chirikov 标准映射：
+
+```text
+p'     = p + k sin(theta)
+theta' = theta + p'   (mod 2*pi)
+```
+
+- 默认轴：k / p0；theta0 固定，可在 Parameters 页改；
+- 通道：theta、p、|p|、cos(theta)；
+- 64/256 地图可见 KAM 岛与混沌海；
+- CPU 与 GPU shader 均已接入。
+
+![Standard map](docs/shot-standard.png)
+
 ### Lua 表达式模型（M5a/M5b）
 
 `experiment.lua` 里的 `M.custom` 定义 2 状态 map：
@@ -102,11 +120,11 @@ GPU 单格结果与 CPU 逐值匹配（双精度 CPU vs float GPU，容差 1e-5�
 
 - GPU 后端把整张 Atlas cells 上传，dispatch 模型 compute，再读回 state/channels，
   交给现有 CPU colorize；
-- 双摆/Logistic/Hénon/Lua custom 都有 GPU shader；
+- 双摆/Logistic/Hénon/Standard/Lua custom 都有 GPU shader；
 - 所有模型可选 GPU；编译/上下文失败自动回退 CPU 并提示；
 - 标题/状态显示 GPU；CPU/GPU 结果在 2 步 atlas 测试中一致；
 - GPU float 与 CPU double 在长时间混沌轨道上会分叉，这是预期；
-- 2 步 atlas GPU/CPU 对照：双摆 < 1.2e-5，Logistic/Hénon < 5e-7。
+- 2 步 atlas GPU/CPU 对照：双摆 < 1.2e-5，Logistic/Hénon/Standard < 5e-7。
 
 ![GPU 自定义模型](docs/shot-custom-gpu.png)
 
@@ -313,13 +331,13 @@ src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 122 项；含 GPU 的 154 项
+src/selftest.c      CPU 124 项；含 GPU 的 160 项
 ```
 
 ## 验证
 
-- `/selftest`：**122/122**
-- `/gpu-selftest`：**154/154**
+- `/selftest`：**124/124**
+- `/gpu-selftest`：**160/160**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
@@ -330,10 +348,10 @@ src/selftest.c      CPU 122 项；含 GPU 的 154 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出默认在 exe 旁 exports/，可 Save As。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出缩放/Save As/PNG 叠加已完成；还缺盆地/逃逸时间；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出、Standard map 已完成；还缺盆地/逃逸时间；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.22.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.23.0.zip`

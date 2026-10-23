@@ -1,12 +1,14 @@
 /* model.c - model registry */
 #include "model.h"
+#include "model_standard.h"
 
 #include <string.h>
 
 static const Model *const g_models[] = {
     &DP_MODEL,
     &LOGISTIC_MODEL,
-    &HENON_MODEL
+    &HENON_MODEL,
+    &STANDARD_MODEL
 };
 
 int model_count(void) { return (int)(sizeof(g_models) / sizeof(g_models[0])); }
