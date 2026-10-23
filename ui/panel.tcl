@@ -64,7 +64,7 @@ grid columnconfigure .f.nb.view.actions 2 -weight 1
 ttk::label .f.nb.view.cl -text "Color by" -font DpBody -anchor w
 ttk::combobox .f.nb.view.ch -state readonly -width 16 -takefocus 0
 ttk::label .f.nb.view.vl -text "View" -font DpBody -anchor w
-ttk::combobox .f.nb.view.post -state readonly -values {raw gradient range variance} -width 12 -takefocus 0
+ttk::combobox .f.nb.view.post -state readonly -values {raw gradient range variance ftle} -width 12 -takefocus 0
 ttk::label .f.nb.view.pl -text "Palette" -font DpBody -anchor w
 ttk::combobox .f.nb.view.pal -state readonly -values {phase ember ice mono} -width 16 -takefocus 0
 grid .f.nb.view.cl -row 1 -column 0 -sticky w -pady 2
@@ -269,6 +269,12 @@ proc draw_colorbar {} {
     if {$ch eq ""} { return }
     lassign $ch name label unit mn mx cyc
     if {$unit ne ""} { set unit " $unit" }
+    set post [.f.nb.view.post get]
+    if {$post ne "raw" && [catch {set rng [dp_query postrange]}] == 0 && [llength $rng] == 2} {
+        lassign $rng mn mx
+        set label "$post $label"
+        set unit ""
+    }
     .f.nb.view.cbar.name configure -text "$label"
     .f.nb.view.cbar.min configure -text [format "%.4g%s" $mn $unit]
     .f.nb.view.cbar.max configure -text [format "%.4g%s" $mx $unit]

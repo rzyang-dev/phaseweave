@@ -206,7 +206,13 @@ Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
 - custom 模型需要当前 Lua 仍定义它；GPU 后端请求失败自动回退 CPU。
 - 自检覆盖 save/load roundtrip；CLI save→load 的离屏图 hash 一致。
 
-## 10c. 地图数字刻度
+## 10c. FTLE 分析
+
+View=ftle：每个 cell 以初始 state 为 base，扰动 state[0]，双轨积分 steps，
+存 `log(|delta|/eps)/steps`；`analysis` 数组在 atlas reset 后缓存，参数/轴变化才重算。
+按 post 自动定色标范围。不是切空间/变分方程 FTLE。
+
+## 10d. 地图数字刻度
 
 `phase_view.c` 用 5×7 矢量数字在底边/左边画 min/mid/max tick；标签位置按
 当前 zoom/pan 通过 `pv_screen_to_world` 换算；轴名画在顶部，范围仍在面板读数。
@@ -244,7 +250,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 25 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.9 MB，exe 约 430 KB。
+zip 约 3.9 MB，exe 约 432 KB。
 
 ## 13. 物理与数值边界
 
@@ -274,6 +280,6 @@ zip 约 3.9 MB，exe 约 430 KB。
 - M7b（进行中）：控制流与 ODE 表达式已进 CPU+GLSL；
 - M8（已完成）：全模型 GPU + 地图数字刻度 + 轴名直绘；
 - M9（已完成）：会话选中格 + `recent.txt`/`last-session.txt` 最近实验；
-- M10（后续）：导出偏好、分析通道。
+- M10（进行中）：FTLE 分析已完成；后续盆地/导出偏好。
 - M8：地图轴刻度、更多会话状态、FTLE/盆地/切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。

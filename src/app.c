@@ -645,6 +645,7 @@ static int app_load_session(App *a, const char *path)
     if (strcmp(s.post, "gradient") == 0) a->exp.post = 1;
     else if (strcmp(s.post, "range") == 0) a->exp.post = 2;
     else if (strcmp(s.post, "variance") == 0) a->exp.post = 3;
+    else if (strcmp(s.post, "ftle") == 0) a->exp.post = 4;
     if (s.palette[0]) strncpy(a->exp.palette, s.palette, sizeof(a->exp.palette) - 1);
     if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, a->exp.palette, NULL, 0);
     a->selected = -1;
@@ -834,6 +835,7 @@ static int app_do_action(App *a, const char *name, const char *value)
         else if (strcmp(value, "gradient") == 0) a->exp.post = 1;
         else if (strcmp(value, "range") == 0) a->exp.post = 2;
         else if (strcmp(value, "variance") == 0) a->exp.post = 3;
+        else if (strcmp(value, "ftle") == 0) a->exp.post = 4;
         else { app_set_last(a, "unknown post"); return 0; }
         app_colorize(a);
         app_set_last(a, value);
@@ -1033,6 +1035,7 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
         if (a->exp.post == 1) post = "gradient";
         else if (a->exp.post == 2) post = "range";
         else if (a->exp.post == 3) post = "variance";
+        else if (a->exp.post == 4) post = "ftle";
         append_list(out, outsz, "%s %s %s", exp_channel_name(&a->exp, a->exp.channel), post, a->exp.palette);
     } else if (strcmp(what, "integration") == 0) {
         append_list(out, outsz, "%d %.9g %d", a->exp.res, a->exp.dt, a->exp.max_steps);
@@ -1074,6 +1077,10 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
             n += snprintf(out + n, outsz - n, "  %s = %.6g %s\n",
                           ci.label, a->sel_ch[k], ci.unit);
         }
+    } else if (strcmp(what, "postrange") == 0) {
+        double lo = 0.0, hi = 1.0;
+        atlas_post_range(a->atlas, &lo, &hi);
+        append_list(out, outsz, "%.9g %.9g", lo, hi);
     } else if (strcmp(what, "recent") == 0) {
         for (i = 0; i < a->nrecent; ++i)
             append_list(out, outsz, "{%s} ", a->recent[i]);
@@ -1198,6 +1205,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
         if (strcmp(opt->post, "gradient") == 0) a->exp.post = 1;
         else if (strcmp(opt->post, "range") == 0) a->exp.post = 2;
         else if (strcmp(opt->post, "variance") == 0) a->exp.post = 3;
+        else if (strcmp(opt->post, "ftle") == 0) a->exp.post = 4;
     }
     pv_init(&a->view);
     dp_phase_lut(a->lut);
@@ -1292,6 +1300,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
             panel_eval(a->panel, "rebuild_schema; update_ui");
     }
     if (opt->save_path) app_save_session(a, opt->save_path);
+    if (a->panel) panel_eval(a->panel, "update_ui");
     app_set_last(a, "ready");
     app_set_title(a, 1);
     return a;

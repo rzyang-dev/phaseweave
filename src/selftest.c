@@ -532,6 +532,28 @@ static void test_session(void)
     DeleteFileA(path);
 }
 
+static void test_ftle(void)
+{
+    Experiment e;
+    Atlas *a;
+    char err[512];
+    int i, positive = 0;
+    printf("-- FTLE analysis\n");
+    exp_init(&e, &LOGISTIC_MODEL);
+    e.res = 16;
+    e.max_steps = 8;
+    a = atlas_create(&e, 16, err, sizeof(err));
+    check(a != NULL, "FTLE atlas creation");
+    if (!a) return;
+    check(atlas_compute_ftle(a, &e) == 1, "FTLE compute");
+    for (i = 0; i < 16 * 16; ++i) {
+        float v = atlas_analysis_data(a)[i];
+        if (v == v && v > 0.0f) positive++;
+    }
+    check(positive > 0, "FTLE finds positive stretching");
+    atlas_destroy(a);
+}
+
 static void test_fortran(void)
 {
     DpConfig cfg = test_cfg(24);
@@ -1120,6 +1142,7 @@ int dp_selftest(int with_gpu)
     test_schema();
     test_expressions_and_custom();
     test_session();
+    test_ftle();
     test_fortran();
     test_timing();
     test_lua();

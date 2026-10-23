@@ -16,6 +16,9 @@ struct Atlas {
     int cells;
     float *cells_data;  /* per cell: state[4] + model values[12] */
     float *channels;    /* per cell: model channels */
+    float *analysis;    /* per cell: FTLE / analysis scalar */
+    int analysis_valid;
+    double post_min, post_max;
     unsigned char *rgba;
     ThreadPool *pool;
 };
@@ -53,15 +56,18 @@ Atlas *atlas_create(const Experiment *e, int res, char *err, size_t errsz)
     if (res > 1024) res = 1024;
     a->res = res;
     a->cells = res * res;
+    a->analysis_valid = 0;
     a->cells_data = (float *)calloc((size_t)a->cells * (4u + MODEL_MAX_PARAMS), sizeof(float));
     a->channels = (float *)calloc((size_t)a->cells * EXP_NCH, sizeof(float));
+    a->analysis = (float *)calloc((size_t)a->cells, sizeof(float));
     a->rgba = (unsigned char *)calloc((size_t)a->cells * 4u, 1);
-    if (!a->cells_data || !a->channels || !a->rgba) {
+    if (!a->cells_data || !a->channels || !a->analysis || !a->rgba) {
         atlas_destroy(a);
         if (err) snprintf(err, errsz, "atlas: out of memory (%dx%d)", res, res);
         return NULL;
     }
     a->pool = pool_create(0);
+    a->analysis_valid = 0;
     atlas_reset(a, e);
     return a;
 }
@@ -72,6 +78,7 @@ void atlas_destroy(Atlas *a)
     if (a->pool) pool_destroy(a->pool);
     free(a->cells_data);
     free(a->channels);
+    free(a->analysis);
     free(a->rgba);
     free(a);
 }
@@ -82,13 +89,14 @@ void atlas_resize(Atlas *a, int res, char *err, size_t errsz)
     if (res < 16) res = 16;
     if (res > 1024) res = 1024;
     if (res == a->res) return;
-    free(a->cells_data); free(a->channels); free(a->rgba);
+    free(a->cells_data); free(a->channels); free(a->analysis); free(a->rgba);
     a->res = res;
     a->cells = res * res;
     a->cells_data = (float *)calloc((size_t)a->cells * (4u + MODEL_MAX_PARAMS), sizeof(float));
     a->channels = (float *)calloc((size_t)a->cells * EXP_NCH, sizeof(float));
+    a->analysis = (float *)calloc((size_t)a->cells, sizeof(float));
     a->rgba = (unsigned char *)calloc((size_t)a->cells * 4u, 1);
-    if (!a->cells_data || !a->channels || !a->rgba) {
+    if (!a->cells_data || !a->channels || !a->analysis || !a->rgba) {
         if (err) snprintf(err, errsz, "atlas: out of memory (%dx%d)", res, res);
     }
 }
@@ -111,7 +119,9 @@ void atlas_reset(Atlas *a, const Experiment *e)
             }
         }
     }
+    a->analysis_valid = 0;
     atlas_step(a, e, 0);
+    if (e->post == 4) atlas_compute_ftle(a, e);
 }
 
 static void atlas_band(void *user, int y0, int y1)
@@ -151,6 +161,11 @@ void atlas_step(Atlas *a, const Experiment *e, int steps)
 
 static double post_value(Atlas *a, int ch, int cyclic, int x, int y, int post)
 {
+    if (post == 4) {
+        int cx = x < 0 ? 0 : (x >= a->res ? a->res - 1 : x);
+        int cy = y < 0 ? 0 : (y >= a->res ? a->res - 1 : y);
+        return a->analysis[(size_t)cy * a->res + cx];
+    }
     if (post == 1) {
         double tl, tr, bl, br, tc, bc, ml, mr, gx, gy;
         channel_at(a, ch, x - 1, y - 1, &tl);
@@ -210,6 +225,7 @@ void atlas_colorize(Atlas *a, const Experiment *e, const unsigned char *lut)
     low = ci.min; high = ci.max;
     span = high - low;
     if (fabs(span) < 1e-9) span = 1.0;
+    if (e->post == 4 && !a->analysis_valid) atlas_compute_ftle(a, e);
 
     if (e->post != 0) {
         for (y = 0; y < a->res; ++y) {
@@ -222,6 +238,7 @@ void atlas_colorize(Atlas *a, const Experiment *e, const unsigned char *lut)
             }
         }
         if (!(pmin < pmax)) { pmin = 0.0; pmax = 1.0; }
+        a->post_min = pmin; a->post_max = pmax;
     }
 
     for (y = 0; y < a->res; ++y) {
@@ -269,4 +286,57 @@ void atlas_read_cell(const Atlas *a, int index, float state[MODEL_MAX_STATE], fl
     memcpy(state, c, MODEL_MAX_STATE * sizeof(float));
     memcpy(vals, c + MODEL_MAX_STATE, MODEL_MAX_PARAMS * sizeof(float));
     memcpy(ch, a->channels + (size_t)index * EXP_NCH, 4u * sizeof(float));
+}
+const float *atlas_analysis_data(Atlas *a) { return a ? a->analysis : NULL; }
+
+void atlas_post_range(Atlas *a, double *lo, double *hi)
+{
+    if (!a) return;
+    if (lo) *lo = a->post_min;
+    if (hi) *hi = a->post_max;
+}
+
+int atlas_compute_ftle(Atlas *a, const Experiment *e)
+{
+    const Model *m;
+    int x, y, steps, dim, k;
+    double dt;
+    if (!a || !e || !e->mdl || !a->analysis) return 0;
+    a->analysis_valid = 1;
+    m = e->mdl;
+    steps = e->max_steps > 0 ? e->max_steps : 1;
+    dim = m->state_dim > 0 ? m->state_dim : 1;
+    if (dim > MODEL_MAX_STATE) dim = MODEL_MAX_STATE;
+    dt = e->dt;
+    for (y = 0; y < a->res; ++y) {
+        for (x = 0; x < a->res; ++x) {
+            float *c = a->cells_data + (size_t)(y * a->res + x) * (4u + MODEL_MAX_PARAMS);
+            double s0[MODEL_MAX_STATE], p0[MODEL_MAX_STATE];
+            double vals[MODEL_MAX_PARAMS];
+            double eps, dist = 0.0, v;
+            for (k = 0; k < MODEL_MAX_STATE; ++k) s0[k] = c[k];
+            for (k = 0; k < MODEL_MAX_PARAMS; ++k) vals[k] = c[MODEL_MAX_STATE + k];
+            eps = 1e-6 * (1.0 + fabs(s0[0]));
+            for (k = 0; k < MODEL_MAX_STATE; ++k) p0[k] = s0[k];
+            p0[0] += eps;
+            m->step(m, s0, vals, dt, steps);
+            m->step(m, p0, vals, dt, steps);
+            for (k = 0; k < dim; ++k) {
+                double d = p0[k] - s0[k];
+                if (strcmp(m->id, "double_pendulum") == 0 && k < 2)
+                    d = wrap_diff(p0[k], s0[k]);
+                dist += d * d;
+            }
+            dist = sqrt(dist);
+            if (dist > 0.0 && dist == dist)
+                v = log(dist / eps) / (double)steps;
+            else
+                v = -20.0;
+            if (v != v) v = -20.0;
+            if (v < -20.0) v = -20.0;
+            if (v > 20.0) v = 20.0;
+            a->analysis[(size_t)(y * a->res + x)] = (float)v;
+        }
+    }
+    return 1;
 }

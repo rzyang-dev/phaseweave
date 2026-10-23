@@ -28,6 +28,7 @@ int session_save(const char *path, const Experiment *e, const PhaseView *v,
     if (e->post == 1) post = "gradient";
     else if (e->post == 2) post = "range";
     else if (e->post == 3) post = "variance";
+    else if (e->post == 4) post = "ftle";
     f = fopen(path, "wb");
     if (!f) { if (err) snprintf(err, errsz, "cannot create %s", path); return 0; }
     fprintf(f, "DPEXPERIMENT 1\n");
