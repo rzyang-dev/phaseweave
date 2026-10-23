@@ -29,13 +29,44 @@ static void custom_init(const Model *m, const double *vals, double state[MODEL_M
     state[2] = state[3] = 0.0;
 }
 
+static void deriv_eval(const CustomModel *cm, const double state[2], const double *vals,
+                        double *dx, double *dy)
+{
+    double vars[EXPR_MAX_VARS];
+    vars_for(cm, state, vals, vars);
+    *dx = expr_eval(&cm->deriv_x, vars);
+    vars_for(cm, state, vals, vars);
+    *dy = expr_eval(&cm->deriv_y, vars);
+}
+
 static void custom_step(const Model *m, double state[MODEL_MAX_STATE],
                         const double *vals, double dt, int steps)
 {
     const CustomModel *cm = (const CustomModel *)m->user;
     double vars[EXPR_MAX_VARS];
     int i;
-    (void)dt;
+    if (cm->is_ode) {
+        double h = dt > 0.0 ? dt : 0.01;
+        for (i = 0; i < steps; ++i) {
+            double s0[2] = { state[0], state[1] };
+            double k1x, k1y, k2x, k2y, k3x, k3y, k4x, k4y, s[2];
+            deriv_eval(cm, s0, vals, &k1x, &k1y);
+            s[0] = s0[0] + 0.5 * h * k1x; s[1] = s0[1] + 0.5 * h * k1y;
+            deriv_eval(cm, s, vals, &k2x, &k2y);
+            s[0] = s0[0] + 0.5 * h * k2x; s[1] = s0[1] + 0.5 * h * k2y;
+            deriv_eval(cm, s, vals, &k3x, &k3y);
+            s[0] = s0[0] + h * k3x; s[1] = s0[1] + h * k3y;
+            deriv_eval(cm, s, vals, &k4x, &k4y);
+            state[0] = s0[0] + h / 6.0 * (k1x + 2.0*k2x + 2.0*k3x + k4x);
+            state[1] = s0[1] + h / 6.0 * (k1y + 2.0*k2y + 2.0*k3y + k4y);
+            if (!(state[0] == state[0]) || !(state[1] == state[1]) ||
+                fabs(state[0]) > 1e12 || fabs(state[1]) > 1e12) {
+                state[0] = 0.0; state[1] = 0.0;
+            }
+        }
+        (void)vars;
+        return;
+    }
     for (i = 0; i < steps; ++i) {
         double x, y;
         vars_for(cm, state, vals, vars);
@@ -84,6 +115,7 @@ int custom_model_build(CustomModel *cm, const CustomSpec *s, char *err, size_t e
         return 0;
     }
     cm->nparams = s->schema.nparams;
+    cm->is_ode = s->type == 1;
     cm->nchannels = s->schema.nchannels;
     strncpy(cm->title, s->schema.title[0] ? s->schema.title : "Lua expression map",
             sizeof(cm->title) - 1);
@@ -140,8 +172,13 @@ int custom_model_build(CustomModel *cm, const CustomSpec *s, char *err, size_t e
     vstep[nv++] = cm->state_names[0];
     vstep[nv++] = cm->state_names[1];
     for (i = 0; i < cm->nparams; ++i) vstep[nv++] = cm->pname[i];
-    if (!expr_compile(&cm->step_x, s->step_x, vstep, nv, err, errsz)) return 0;
-    if (!expr_compile(&cm->step_y, s->step_y, vstep, nv, err, errsz)) return 0;
+    if (cm->is_ode) {
+        if (!expr_compile(&cm->deriv_x, s->deriv_x, vstep, nv, err, errsz)) return 0;
+        if (!expr_compile(&cm->deriv_y, s->deriv_y, vstep, nv, err, errsz)) return 0;
+    } else {
+        if (!expr_compile(&cm->step_x, s->step_x, vstep, nv, err, errsz)) return 0;
+        if (!expr_compile(&cm->step_y, s->step_y, vstep, nv, err, errsz)) return 0;
+    }
     for (i = 0; i < cm->nchannels; ++i) {
         char fallback[32];
         const char *src = s->chan_expr[i][0] ? s->chan_expr[i] : NULL;
@@ -193,43 +230,84 @@ static int glsl_append(char *out, size_t outsz, size_t *pos, const char *fmt, ..
 int custom_model_glsl(const CustomModel *cm, char *out, size_t outsz,
                       char *err, size_t errsz)
 {
-    char vbuf[2 + MODEL_MAX_PARAMS][64];
-    const char *vars[2 + MODEL_MAX_PARAMS];
+    char pbuf[MODEL_MAX_PARAMS][64];
+    char sx2[80], sy2[80], sx3[80], sy3[80], sx4[80], sy4[80];
+    const char *v1[2 + MODEL_MAX_PARAMS];
+    const char *v2[2 + MODEL_MAX_PARAMS];
+    const char *v3[2 + MODEL_MAX_PARAMS];
+    const char *v4[2 + MODEL_MAX_PARAMS];
     char step_x[2048], step_y[2048];
+    char d1x[2048], d1y[2048], d2x[2048], d2y[2048];
+    char d3x[2048], d3y[2048], d4x[2048], d4y[2048];
     char chan[MODEL_MAX_CHANNELS][2048];
     size_t pos = 0;
-    int i;
+    int i, nv;
     if (err && errsz) err[0] = 0;
     if (!cm || !out || outsz == 0) return 0;
     if (cm->nparams < 0 || cm->nparams > MODEL_MAX_PARAMS) return 0;
-    snprintf(vbuf[0], sizeof(vbuf[0]), "sx");
-    snprintf(vbuf[1], sizeof(vbuf[1]), "sy");
     for (i = 0; i < cm->nparams; ++i)
-        snprintf(vbuf[2 + i], sizeof(vbuf[2 + i]), "cells[i*16+%d]", 4 + i);
-    vars[0] = vbuf[0]; vars[1] = vbuf[1];
-    for (i = 0; i < cm->nparams; ++i) vars[2 + i] = vbuf[2 + i];
-    if (!expr_to_glsl(&cm->step_x, vars, 2 + cm->nparams, step_x, sizeof(step_x), err, errsz)) return 0;
-    if (!expr_to_glsl(&cm->step_y, vars, 2 + cm->nparams, step_y, sizeof(step_y), err, errsz)) return 0;
-    for (i = 0; i < cm->nchannels; ++i) {
-        if (!expr_to_glsl(&cm->chan[i], vars, 2 + cm->nparams, chan[i], sizeof(chan[i]), err, errsz))
-            return 0;
+        snprintf(pbuf[i], sizeof(pbuf[i]), "cells[i*16+%d]", 4 + i);
+    snprintf(sx2, sizeof(sx2), "(sx + 0.5*uDt*k1x)");
+    snprintf(sy2, sizeof(sy2), "(sy + 0.5*uDt*k1y)");
+    snprintf(sx3, sizeof(sx3), "(sx + 0.5*uDt*k2x)");
+    snprintf(sy3, sizeof(sy3), "(sy + 0.5*uDt*k2y)");
+    snprintf(sx4, sizeof(sx4), "(sx + uDt*k3x)");
+    snprintf(sy4, sizeof(sy4), "(sy + uDt*k3y)");
+    v1[0] = "sx"; v1[1] = "sy";
+    v2[0] = sx2; v2[1] = sy2;
+    v3[0] = sx3; v3[1] = sy3;
+    v4[0] = sx4; v4[1] = sy4;
+    for (i = 0; i < cm->nparams; ++i) {
+        v1[2 + i] = pbuf[i];
+        v2[2 + i] = pbuf[i];
+        v3[2 + i] = pbuf[i];
+        v4[2 + i] = pbuf[i];
     }
+    nv = 2 + cm->nparams;
+    if (cm->is_ode) {
+        if (!expr_to_glsl(&cm->deriv_x, v1, nv, d1x, sizeof(d1x), err, errsz)) return 0;
+        if (!expr_to_glsl(&cm->deriv_y, v1, nv, d1y, sizeof(d1y), err, errsz)) return 0;
+        if (!expr_to_glsl(&cm->deriv_x, v2, nv, d2x, sizeof(d2x), err, errsz)) return 0;
+        if (!expr_to_glsl(&cm->deriv_y, v2, nv, d2y, sizeof(d2y), err, errsz)) return 0;
+        if (!expr_to_glsl(&cm->deriv_x, v3, nv, d3x, sizeof(d3x), err, errsz)) return 0;
+        if (!expr_to_glsl(&cm->deriv_y, v3, nv, d3y, sizeof(d3y), err, errsz)) return 0;
+        if (!expr_to_glsl(&cm->deriv_x, v4, nv, d4x, sizeof(d4x), err, errsz)) return 0;
+        if (!expr_to_glsl(&cm->deriv_y, v4, nv, d4y, sizeof(d4y), err, errsz)) return 0;
+    } else {
+        if (!expr_to_glsl(&cm->step_x, v1, nv, step_x, sizeof(step_x), err, errsz)) return 0;
+        if (!expr_to_glsl(&cm->step_y, v1, nv, step_y, sizeof(step_y), err, errsz)) return 0;
+    }
+    for (i = 0; i < cm->nchannels; ++i)
+        if (!expr_to_glsl(&cm->chan[i], v1, nv, chan[i], sizeof(chan[i]), err, errsz))
+            return 0;
     if (!glsl_append(out, outsz, &pos, "#version 430\n"))
         return 0;
     glsl_append(out, outsz, &pos,
         "layout(local_size_x=1, local_size_y=1) in;\n"
         "layout(std430, binding=0) buffer Cells { float cells[]; };\n"
         "layout(std430, binding=1) buffer Chans { float chans[]; };\n"
-        "uniform int uRes;\nuniform int uSteps;\n"
+        "uniform int uRes;\nuniform int uSteps;\n");
+    if (cm->is_ode) glsl_append(out, outsz, &pos, "uniform float uDt;\n");
+    glsl_append(out, outsz, &pos,
         "void main() {\n"
         "  int i = int(gl_GlobalInvocationID.x) + int(gl_GlobalInvocationID.y) * uRes;\n"
         "  float sx = cells[i*16+0];\n"
         "  float sy = cells[i*16+1];\n"
         "  for (int k=0; k<uSteps; ++k) {\n");
-    glsl_append(out, outsz, &pos, "    float nx = %s;\n", step_x);
-    glsl_append(out, outsz, &pos, "    float ny = %s;\n", step_y);
+    if (cm->is_ode) {
+        glsl_append(out, outsz, &pos, "    float k1x = %s;\n    float k1y = %s;\n", d1x, d1y);
+        glsl_append(out, outsz, &pos, "    float k2x = %s;\n    float k2y = %s;\n", d2x, d2y);
+        glsl_append(out, outsz, &pos, "    float k3x = %s;\n    float k3y = %s;\n", d3x, d3y);
+        glsl_append(out, outsz, &pos, "    float k4x = %s;\n    float k4y = %s;\n", d4x, d4y);
+        glsl_append(out, outsz, &pos,
+            "    sx += (uDt / 6.0) * (k1x + 2.0*k2x + 2.0*k3x + k4x);\n"
+            "    sy += (uDt / 6.0) * (k1y + 2.0*k2y + 2.0*k3y + k4y);\n");
+    } else {
+        glsl_append(out, outsz, &pos, "    float nx = %s;\n", step_x);
+        glsl_append(out, outsz, &pos, "    float ny = %s;\n", step_y);
+        glsl_append(out, outsz, &pos, "    sx = nx; sy = ny;\n");
+    }
     glsl_append(out, outsz, &pos,
-        "    sx = nx; sy = ny;\n"
         "    if (isnan(sx) || isnan(sy) || isinf(sx) || isinf(sy) || abs(sx) > 1e12 || abs(sy) > 1e12) { sx = 0.0; sy = 0.0; }\n"
         "  }\n"
         "  cells[i*16+0] = sx; cells[i*16+1] = sy;\n");

@@ -37,11 +37,14 @@ typedef struct {
 
 typedef struct {
     Schema schema;
+    int type; /* 0 = map, 1 = ODE */
     char state_names[2][24];
     char init_x[CUSTOM_EXPR_MAX];
     char init_y[CUSTOM_EXPR_MAX];
     char step_x[CUSTOM_EXPR_MAX];
     char step_y[CUSTOM_EXPR_MAX];
+    char deriv_x[CUSTOM_EXPR_MAX];
+    char deriv_y[CUSTOM_EXPR_MAX];
     char chan_expr[MODEL_MAX_CHANNELS][CUSTOM_EXPR_MAX];
 } CustomSpec;
 

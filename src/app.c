@@ -293,7 +293,7 @@ static int app_gpu_advance(App *a, int steps)
     cells = atlas_cell_data(a->atlas);
     memcpy(a->gpu_cells, cells, cn * sizeof(float));
     err[0] = 0;
-    if (!gpu_run_custom(a->gpu, a->gpu_cells, res, steps,
+    if (!gpu_run_custom(a->gpu, a->gpu_cells, res, steps, a->exp.dt,
                         a->gpu_cells, a->gpu_chans, err, sizeof(err))) {
         a->backend_gpu = 0;
         app_set_last(a, err[0] ? err : "GPU failed; CPU fallback");

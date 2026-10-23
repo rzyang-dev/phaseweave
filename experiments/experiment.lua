@@ -77,6 +77,9 @@ M.models = {
     },
 }
 
+-- Custom models are 2-state maps by default.  To make an ODE instead, use
+--   type = "ode", deriv = { x = "y", y = "-x" },  -- instead of step
+-- and keep init/channels.  CPU and GLSL both use RK4 with the experiment dt.
 M.custom = {
     title = "Lua Hénon map",
     state = { "x", "y" },

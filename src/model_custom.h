@@ -20,6 +20,8 @@ typedef struct {
     char title[80];
     Expr init_x, init_y;
     Expr step_x, step_y;
+    Expr deriv_x, deriv_y;
+    int  is_ode;
     Expr chan[MODEL_MAX_CHANNELS];
     int nparams;
     int nchannels;

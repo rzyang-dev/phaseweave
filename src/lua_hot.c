@@ -676,16 +676,36 @@ int lua_hot_custom(LuaHot *h, CustomSpec *out, char *err, size_t errsz)
         schema_str(L, -1, out->state_names[1], out->init_y, sizeof(out->init_y));
     }
     lua_pop(L, 1);
-    lua_getfield(L, -1, "step");
-    if (lua_istable(L, -1)) {
-        schema_str(L, -1, out->state_names[0], out->step_x, sizeof(out->step_x));
-        schema_str(L, -1, out->state_names[1], out->step_y, sizeof(out->step_y));
+    {
+        char kind[16];
+        kind[0] = 0;
+        schema_str(L, -1, "type", kind, sizeof(kind));
+        out->type = strcmp(kind, "ode") == 0 ? 1 : 0;
     }
-    lua_pop(L, 1);
-    if (!out->step_x[0] || !out->step_y[0]) {
+    if (out->type == 1) {
+        lua_getfield(L, -1, "deriv");
+        if (lua_istable(L, -1)) {
+            schema_str(L, -1, out->state_names[0], out->deriv_x, sizeof(out->deriv_x));
+            schema_str(L, -1, out->state_names[1], out->deriv_y, sizeof(out->deriv_y));
+        }
         lua_pop(L, 1);
-        set_err(err, errsz, "custom.step must define both state expressions");
-        return 0;
+        if (!out->deriv_x[0] || !out->deriv_y[0]) {
+            lua_pop(L, 1);
+            set_err(err, errsz, "custom.deriv must define both derivative expressions");
+            return 0;
+        }
+    } else {
+        lua_getfield(L, -1, "step");
+        if (lua_istable(L, -1)) {
+            schema_str(L, -1, out->state_names[0], out->step_x, sizeof(out->step_x));
+            schema_str(L, -1, out->state_names[1], out->step_y, sizeof(out->step_y));
+        }
+        lua_pop(L, 1);
+        if (!out->step_x[0] || !out->step_y[0]) {
+            lua_pop(L, 1);
+            set_err(err, errsz, "custom.step must define both state expressions");
+            return 0;
+        }
     }
     lua_getfield(L, -1, "channels");
     if (lua_istable(L, -1)) {

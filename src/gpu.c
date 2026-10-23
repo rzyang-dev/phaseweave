@@ -51,7 +51,7 @@ struct Gpu {
     GLuint custom_chans;
     size_t custom_cells_bytes;
     size_t custom_chans_bytes;
-    GLint  u_custom_res, u_custom_steps;
+    GLint  u_custom_res, u_custom_steps, u_custom_dt;
 
     char version[160];
     char renderer[160];
@@ -773,6 +773,7 @@ int gpu_compile_custom(Gpu *g, const char *src, char *err, size_t errsz)
     g->custom_prog = prog;
     g->u_custom_res = g->gl.GetUniformLocation(prog, "uRes");
     g->u_custom_steps = g->gl.GetUniformLocation(prog, "uSteps");
+    g->u_custom_dt = g->gl.GetUniformLocation(prog, "uDt");
     if (g->u_custom_res < 0 || g->u_custom_steps < 0) {
         if (err) snprintf(err, errsz, "custom compute: uRes/uSteps optimized out");
         return 0;
@@ -780,7 +781,7 @@ int gpu_compile_custom(Gpu *g, const char *src, char *err, size_t errsz)
     return 1;
 }
 
-int gpu_run_custom(Gpu *g, const float *cells, int res, int steps,
+int gpu_run_custom(Gpu *g, const float *cells, int res, int steps, double dt,
                    float *out_cells, float *out_chans,
                    char *err, size_t errsz)
 {
@@ -818,6 +819,7 @@ int gpu_run_custom(Gpu *g, const float *cells, int res, int steps,
     g->gl.UseProgram(g->custom_prog);
     g->gl.Uniform1i(g->u_custom_res, res);
     g->gl.Uniform1i(g->u_custom_steps, steps);
+    if (g->u_custom_dt >= 0) g->gl.Uniform1f(g->u_custom_dt, (GLfloat)(dt > 0.0 ? dt : 0.01));
     g->gl.DispatchCompute((GLuint)res, (GLuint)res, 1);
     g->gl.MemoryBarrier(DP_GL_SHADER_STORAGE_BARRIER_BIT | DP_GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | DP_GL_TEXTURE_FETCH_BARRIER_BIT);
     g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_cells);

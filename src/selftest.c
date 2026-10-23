@@ -376,6 +376,37 @@ static void test_schema(void)
     }
 }
 
+static void make_ode_spec(CustomSpec *spec)
+{
+    memset(spec, 0, sizeof(*spec));
+    spec->type = 1;
+    strcpy(spec->schema.title, "Harmonic oscillator");
+    spec->schema.nparams = 2;
+    strcpy(spec->schema.params[0].name, "x0");
+    strcpy(spec->schema.params[0].label, "x0");
+    spec->schema.params[0].def = 1.0;
+    spec->schema.params[0].min = -2; spec->schema.params[0].max = 2;
+    strcpy(spec->schema.params[1].name, "y0");
+    strcpy(spec->schema.params[1].label, "y0");
+    spec->schema.params[1].def = 0.0;
+    spec->schema.params[1].min = -2; spec->schema.params[1].max = 2;
+    spec->schema.nchannels = 2;
+    strcpy(spec->schema.channels[0].name, "x");
+    strcpy(spec->schema.channels[0].label, "x");
+    spec->schema.channels[0].min = -2; spec->schema.channels[0].max = 2;
+    strcpy(spec->schema.channels[1].name, "y");
+    strcpy(spec->schema.channels[1].label, "y");
+    spec->schema.channels[1].min = -2; spec->schema.channels[1].max = 2;
+    strcpy(spec->state_names[0], "x");
+    strcpy(spec->state_names[1], "y");
+    strcpy(spec->init_x, "x0");
+    strcpy(spec->init_y, "y0");
+    strcpy(spec->deriv_x, "y");
+    strcpy(spec->deriv_y, "-x");
+    strcpy(spec->chan_expr[0], "x");
+    strcpy(spec->chan_expr[1], "y");
+}
+
 static void test_expressions_and_custom(void)
 {
     Expr ex;
@@ -439,6 +470,22 @@ static void test_expressions_and_custom(void)
     cm.model.observe(&cm.model, state, vals, ch);
     HENON_MODEL.observe(&HENON_MODEL, state2, vals, ch2);
     check(fabs(ch[2] - ch2[2]) < 1e-5, "custom channel expression matches");
+    {
+        CustomSpec ospec;
+        CustomModel ocm;
+        double ov[MODEL_MAX_PARAMS];
+        double ost[4];
+        float och[4];
+        make_ode_spec(&ospec);
+        check(custom_model_build(&ocm, &ospec, err, sizeof(err)) == 1, "ODE custom model builds");
+        ov[0] = 1.0; ov[1] = 0.0;
+        ocm.model.init(&ocm.model, ov, ost);
+        ocm.model.step(&ocm.model, ost, ov, 0.01, 100);
+        check(fabs(ost[0] - cos(1.0)) < 1e-4 && fabs(ost[1] + sin(1.0)) < 1e-4,
+              "custom ODE matches harmonic oscillator");
+        ocm.model.observe(&ocm.model, ost, ov, och);
+        check(fabs(och[0] - (float)cos(1.0)) < 1e-4, "ODE channel evaluates");
+    }
 
     lua_hot_destroy(h);
     platform_free(src);
@@ -797,7 +844,7 @@ static void test_gpu_custom(Gpu *g)
     check(gpu_compile_custom(g, glsl, err, sizeof(err)) == 1, "generated GLSL compiles");
     memset(cells, 0, sizeof(cells));
     cells[4] = 1.4f; cells[5] = 0.3f; cells[6] = 0.0f; cells[7] = 0.0f;
-    check(gpu_run_custom(g, cells, 1, 10, out, ch, err, sizeof(err)) == 1, "GPU custom dispatch");
+    check(gpu_run_custom(g, cells, 1, 10, 0.01, out, ch, err, sizeof(err)) == 1, "GPU custom dispatch");
     memset(vals, 0, sizeof(vals));
     vals[0] = 1.4; vals[1] = 0.3;
     cm.model.init(&cm.model, vals, state);
@@ -830,7 +877,7 @@ static void test_gpu_custom(Gpu *g)
             atlas_step(a, &e, 2);
             memcpy(cpu, atlas_cell_data(a), (size_t)n * stride * sizeof(float));
             memcpy(cpu_ch, atlas_channel_data(a), (size_t)n * 4u * sizeof(float));
-            check(gpu_run_custom(g, init, 8, 2, gout, gch, err, sizeof(err)) == 1,
+            check(gpu_run_custom(g, init, 8, 2, 0.01, gout, gch, err, sizeof(err)) == 1,
                   "GPU custom atlas dispatch");
             {
                 double md = 0.0;
@@ -846,6 +893,27 @@ static void test_gpu_custom(Gpu *g)
             free(init); free(cpu); free(cpu_ch); free(gout); free(gch);
             atlas_destroy(a);
         }
+    }
+    {
+        CustomSpec ospec;
+        CustomModel ocm;
+        double ov[MODEL_MAX_PARAMS], ost[4];
+        float ocells[16], oout[16], och[4];
+        make_ode_spec(&ospec);
+        check(custom_model_build(&ocm, &ospec, err, sizeof(err)) == 1, "GPU ODE model builds");
+        check(custom_model_glsl(&ocm, glsl, sizeof(glsl), err, sizeof(err)) == 1, "ODE GLSL generated");
+        check(gpu_compile_custom(g, glsl, err, sizeof(err)) == 1, "ODE GLSL compiles");
+        memset(ocells, 0, sizeof(ocells));
+        ocells[0] = 1.0f;
+        ocells[4] = 1.0f; /* x0 */
+        ocells[5] = 0.0f; /* y0 */
+        check(gpu_run_custom(g, ocells, 1, 100, 0.01, oout, och, err, sizeof(err)) == 1,
+              "GPU ODE dispatch");
+        ov[0] = 1.0; ov[1] = 0.0;
+        ocm.model.init(&ocm.model, ov, ost);
+        ocm.model.step(&ocm.model, ost, ov, 0.01, 100);
+        check(fabs(oout[0] - ost[0]) < 1e-4 && fabs(oout[1] - ost[1]) < 1e-4,
+              "GPU ODE matches CPU");
     }
 }
 
