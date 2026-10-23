@@ -26,6 +26,7 @@ typedef struct {
     int backend_gpu;
     int selected, sel_x, sel_y;
     int export_scale;
+    int export_overlay;
     double view_cx, view_cy, view_zoom;
     int nparams;
     SessionParam params[MODEL_MAX_PARAMS];

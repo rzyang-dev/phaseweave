@@ -103,9 +103,11 @@ grid .f.nb.view.checks -row 6 -column 0 -columnspan 2 -sticky ew -pady {4 0}
 ttk::checkbutton .f.nb.view.checks.g -text "Grid" -variable ::vGrid -command {act grid $::vGrid} -takefocus 0
 ttk::checkbutton .f.nb.view.checks.p -text "Periodic" -variable ::vPeriodic -command {act periodic $::vPeriodic} -takefocus 0
 ttk::checkbutton .f.nb.view.checks.c -text "Circle" -variable ::vCircle -command {act circle $::vCircle} -takefocus 0
+ttk::checkbutton .f.nb.view.checks.o -text "PNG ov" -variable ::vOverlay -command {act export_overlay $::vOverlay} -takefocus 0
 grid .f.nb.view.checks.g -row 0 -column 0 -sticky w
 grid .f.nb.view.checks.p -row 0 -column 1 -sticky w -padx 6
 grid .f.nb.view.checks.c -row 0 -column 2 -sticky w
+grid .f.nb.view.checks.o -row 0 -column 3 -sticky w -padx {6 0}
 ttk::button .f.nb.view.rv -text "Reset view" -command {act view_reset} -takefocus 0
 grid .f.nb.view.rv -row 7 -column 0 -columnspan 2 -sticky w -pady {4 0}
 ttk::frame .f.nb.view.presets
@@ -315,7 +317,11 @@ proc update_ui {} {
         .f.nb.view.ch set $ch
         .f.nb.view.post set $post
         .f.nb.view.pal set $pal
-        if {[catch {set es [dp_query export]}] == 0} { .f.nb.view.exports.scale set "${es}x" }
+        if {[catch {set es [dp_query export]}] == 0} {
+            lassign $es scale overlay
+            .f.nb.view.exports.scale set "${scale}x"
+            set ::vOverlay $overlay
+        }
         .f.stat.line3 configure -text "$ch  |  $post"
         catch {draw_colorbar}
     }

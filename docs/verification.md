@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (25 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (433,664 bytes)
+OK -> dist/dp-phase/dp-phase.exe (435,712 bytes)
       staged 10.2 MB
-      dist/dp-phase-1.21.0.zip (4.1 MB)
+      dist/dp-phase-1.22.0.zip (4.1 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 433,664 B |
+| exe | 435,712 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -253,24 +253,31 @@ log(stretch)/steps；reset 后缓存，参数/轴变化重算。
 
 ![Script 会话](shot-panel-script.png)
 
-## 15. 控制流表达式
+## 15. PNG 叠加
+
+`PNG ov` 默认开：导出时用与窗口相同的 overlay 顶点，CPU Bresenham 栅格化到
+PNG；<192px 跳过轴文字，保留 Grid/选中圈。CLI `/export_png` 可无对话框导出。
+
+![导出控件](shot-export.png)
+
+## 16. 控制流表达式
 
 `expr.c` 新增比较/逻辑/三元/`if(cond,a,b)`。CPU 用数值真值，GLSL 条件使用 bool；
 自定义 `x_abs` 改为 `if(x < 0, -x, x)`，CPU/GPU 单格测试通过。
 
-## 16. ODE 表达式
+## 17. ODE 表达式
 
 `type="ode"` 使用 `deriv={x=...,y=...}`；CPU 与 GLSL 都走 RK4，`dt` 来自实验。
 自检用 `x'=y, y'=-x` 与解析解 `cos(1), -sin(1)` 对照；GPU 同一结果。
 
-## 17. 性能
+## 18. 性能
 
 - 双摆 64×64：142–147 fps；
 - Logistic/Hénon 64×64：140+ fps；
 - 64×64 双摆每步约 2 ms（8 线程）；
 - 256×256 CPU 仍可算，但约 16 倍成本；GPU atlas 对全模型可用，仍有 CPU 回退。
 
-## 18. 本次修掉的问题
+## 19. 本次修掉的问题
 
 | 问题 | 根因 | 修复 |
 | --- | --- | --- |
@@ -285,7 +292,7 @@ log(stretch)/steps；reset 后缓存，参数/轴变化重算。
 | CSV 列名冲突 | x/y/state/channel 同名 | 加 `x_/y_/state_/ch_` 前缀 |
 | Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/experiment.lua |
 
-## 19. 已知边界
+## 20. 已知边界
 
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
@@ -296,7 +303,7 @@ log(stretch)/steps；reset 后缓存，参数/轴变化重算。
 7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
 8. 没有 3D 切片/连续化。
 
-## 20. 复现
+## 21. 复现
 
 ```powershell
 pwsh -File build.ps1

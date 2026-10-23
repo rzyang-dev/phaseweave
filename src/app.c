@@ -479,31 +479,127 @@ static int app_export_dialog(App *a, const char *def, const char *ext,
     return 1;
 }
 
+static void export_blend(unsigned char *img, int w, int h, int x, int y,
+                          double r, double g, double b, double a)
+{
+    unsigned char *p;
+    if (x < 0 || y < 0 || x >= w || y >= h || a <= 0.0) return;
+    p = img + ((size_t)y * (size_t)w + (size_t)x) * 4u;
+    if (a > 1.0) a = 1.0;
+    p[0] = (unsigned char)(p[0] * (1.0 - a) + r * 255.0 * a);
+    p[1] = (unsigned char)(p[1] * (1.0 - a) + g * 255.0 * a);
+    p[2] = (unsigned char)(p[2] * (1.0 - a) + b * 255.0 * a);
+    p[3] = 255;
+}
+
+static void export_line(unsigned char *img, int w, int h,
+                        double x0, double y0, double x1, double y1,
+                        double r, double g, double b, double a)
+{
+    int ix0 = (int)((x0 * 0.5 + 0.5) * (double)(w - 1) + 0.5);
+    int iy0 = (int)((0.5 - y0 * 0.5) * (double)(h - 1) + 0.5);
+    int ix1 = (int)((x1 * 0.5 + 0.5) * (double)(w - 1) + 0.5);
+    int iy1 = (int)((0.5 - y1 * 0.5) * (double)(h - 1) + 0.5);
+    int dx = abs(ix1 - ix0), sx = ix0 < ix1 ? 1 : -1;
+    int dy = -abs(iy1 - iy0), sy = iy0 < iy1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        export_blend(img, w, h, ix0, iy0, r, g, b, a);
+        if (ix0 == ix1 && iy0 == iy1) break;
+        {
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; ix0 += sx; }
+            if (e2 <= dx) { err += dx; iy0 += sy; }
+        }
+    }
+}
+
+static int app_export_overlay(App *a, unsigned char *img, int w, int h)
+{
+    float *verts;
+    int cap = 32768, total, grid_n = 0, axis_n, i, n;
+    if (!a || !a->atlas || !img) return 0;
+    verts = (float *)malloc((size_t)cap * 6u * sizeof(float));
+    if (!verts) return 0;
+    total = pv_build_overlay(&a->view, 1.0, atlas_res(a->atlas), w, h,
+                             a->selected >= 0 ? a->sel_x : -1,
+                             a->selected >= 0 ? a->sel_y : -1,
+                             verts, cap, &grid_n);
+    axis_n = 0;
+    if (w >= 192) {
+        axis_n = pv_build_axis_ticks(&a->view, 1.0, w, h,
+                                     a->exp.xmin, a->exp.xmax,
+                                     a->exp.ymin, a->exp.ymax,
+                                     (a->exp.axis_x >= 0) ? a->exp.p[a->exp.axis_x].name : "",
+                                     (a->exp.axis_y >= 0) ? a->exp.p[a->exp.axis_y].name : "",
+                                     verts + total * 6, cap - total);
+        total += axis_n;
+    }
+    n = total / 2;
+    for (i = 0; i < n; ++i) {
+        float *v0 = verts + (size_t)(i * 2) * 6;
+        float *v1 = v0 + 6;
+        export_line(img, w, h, v0[0], v0[1], v1[0], v1[1],
+                    v0[2], v0[3], v0[4], v0[5]);
+    }
+    free(verts);
+    return 1;
+}
+
+static int app_export_png_to(App *a, const char *path)
+{
+    char err[256];
+    int res, scale, outres, x, y, dx, dy;
+    const unsigned char *src;
+    unsigned char *big;
+    if (!a || !a->atlas || !path) return 0;
+    res = atlas_res(a->atlas);
+    scale = dp_clampi(a->exp.export_scale, 1, 4);
+    outres = res * scale;
+    big = (unsigned char *)malloc((size_t)outres * outres * 4u);
+    if (!big) return 0;
+    src = atlas_rgba(a->atlas);
+    for (y = 0; y < outres; ++y)
+        for (x = 0; x < outres; ++x) {
+            dx = x / scale; dy = y / scale;
+            memcpy(big + ((size_t)y * outres + x) * 4u,
+                   src + ((size_t)dy * res + dx) * 4u, 4u);
+        }
+    if (a->exp.export_overlay) app_export_overlay(a, big, outres, outres);
+    if (!png_write_rgba(path, big, outres, outres, err, sizeof(err))) {
+        free(big);
+        app_set_last(a, err);
+        return 0;
+    }
+    free(big);
+    app_set_last(a, path);
+    return 1;
+}
+
 static int app_export_png(App *a)
 {
     char path[MAX_PATH], def[MAX_PATH], err[256];
-    int res, scale, x, y, dx, dy;
+    int res, scale, outres, x, y, dx, dy;
     const unsigned char *src;
-    unsigned char *big = NULL;
+    unsigned char *big;
     if (!a || !a->atlas) { app_set_last(a, "export: no atlas"); return 0; }
     if (!app_export_path(a, "png", def, sizeof(def))) return 0;
     if (!app_export_dialog(a, def, "png", "PNG image (*.png)\0*.png\0All files (*.*)\0*.*\0",
                            path, sizeof(path))) return 0;
     res = atlas_res(a->atlas);
     scale = dp_clampi(a->exp.export_scale, 1, 4);
+    outres = res * scale;
+    big = (unsigned char *)malloc((size_t)outres * outres * 4u);
+    if (!big) { app_set_last(a, "export: out of memory"); return 0; }
     src = atlas_rgba(a->atlas);
-    if (scale > 1) {
-        big = (unsigned char *)malloc((size_t)res * scale * res * scale * 4u);
-        if (!big) { app_set_last(a, "export: out of memory"); return 0; }
-        for (y = 0; y < res * scale; ++y)
-            for (x = 0; x < res * scale; ++x) {
-                dx = x / scale; dy = y / scale;
-                memcpy(big + ((size_t)y * res * scale + x) * 4u,
-                       src + ((size_t)dy * res + dx) * 4u, 4u);
-            }
-        src = big;
-    }
-    if (!png_write_rgba(path, src, res * scale, res * scale, err, sizeof(err))) {
+    for (y = 0; y < outres; ++y)
+        for (x = 0; x < outres; ++x) {
+            dx = x / scale; dy = y / scale;
+            memcpy(big + ((size_t)y * outres + x) * 4u,
+                   src + ((size_t)dy * res + dx) * 4u, 4u);
+        }
+    if (a->exp.export_overlay) app_export_overlay(a, big, outres, outres);
+    if (!png_write_rgba(path, big, outres, outres, err, sizeof(err))) {
         free(big);
         app_set_last(a, err);
         return 0;
@@ -691,6 +787,7 @@ static int app_load_session(App *a, const char *path)
     else if (strcmp(s.post, "variance") == 0) a->exp.post = 3;
     else if (strcmp(s.post, "ftle") == 0) a->exp.post = 4;
     a->exp.export_scale = dp_clampi(s.export_scale, 1, 4);
+    a->exp.export_overlay = s.export_overlay ? 1 : 0;
     if (s.palette[0]) strncpy(a->exp.palette, s.palette, sizeof(a->exp.palette) - 1);
     if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, a->exp.palette, NULL, 0);
     a->selected = -1;
@@ -944,6 +1041,11 @@ static int app_do_action(App *a, const char *name, const char *value)
     }
     if (strcmp(name, "save_experiment") == 0) { app_dialog_save(a); return 1; }
     if (strcmp(name, "load_experiment") == 0) { app_dialog_load(a); return 1; }
+    if (strcmp(name, "export_overlay") == 0 && value) {
+        a->exp.export_overlay = (value[0] == '1' || value[0] == 't') ? 1 : 0;
+        app_set_last(a, "PNG overlay toggled");
+        return 1;
+    }
     if (strcmp(name, "export_scale_set") == 0 && value) {
         int s = atoi(value);
         a->exp.export_scale = dp_clampi(s, 1, 4);
@@ -1129,7 +1231,7 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
                           ci.label, a->sel_ch[k], ci.unit);
         }
     } else if (strcmp(what, "export") == 0) {
-        append_list(out, outsz, "%d", a->exp.export_scale);
+        append_list(out, outsz, "%d %d", a->exp.export_scale, a->exp.export_overlay);
     } else if (strcmp(what, "postrange") == 0) {
         double lo = 0.0, hi = 1.0;
         atlas_post_range(a->atlas, &lo, &hi);
@@ -1353,6 +1455,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
             panel_eval(a->panel, "rebuild_schema; update_ui");
     }
     if (opt->save_path) app_save_session(a, opt->save_path);
+    if (opt->export_png_path) app_export_png_to(a, opt->export_png_path);
     if (a->panel) panel_eval(a->panel, "update_ui");
     app_set_last(a, "ready");
     app_set_title(a, 1);

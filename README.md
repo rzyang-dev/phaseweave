@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.21.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.22.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -181,8 +181,10 @@ param.r=3.7
 
 - PNG 导出分辨率可选 **1x/2x/4x**，最近邻放大，不重新采样模型；
 - 导出使用原生 **Save As**，默认路径是 `<exe>\exports\atlas-YYYYMMDD-HHMMSS.png/.csv`；
+- `PNG ov`（默认开）会把 Grid/选中圈/轴刻度/轴名栅格化进 PNG，<192px 时只画 Grid/选中圈；
+- CLI 也可 `/shot out.bmp /export_png atlas.png`；
 - CSV 在 `post=ftle` 时追加 `ftle` 列；
-- 偏好保存在 `.dps` 的 `export_scale`。
+- 偏好保存在 `.dps` 的 `export_scale/export_overlay`。
 
 ![导出缩放](docs/shot-export.png)
 
@@ -328,10 +330,10 @@ src/selftest.c      CPU 122 项；含 GPU 的 154 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出默认在 exe 旁 exports/，可 Save As。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出缩放/Save As 已完成；还缺盆地/逃逸时间；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出缩放/Save As/PNG 叠加已完成；还缺盆地/逃逸时间；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.21.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.22.0.zip`

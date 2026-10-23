@@ -209,7 +209,8 @@ Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
 ## 10b. 导出偏好
 
 PNG/CSV 使用原生 Save As（默认 exe 旁 exports/）；PNG 支持 1x/2x/4x 最近邻放大；
-CSV 在 ftle 模式追加 ftle 列；`export_scale` 存入 .dps。
+`PNG ov` 用同一 overlay 顶点在 CPU 上栅格化 Grid/选中圈/轴刻度（<192px 跳过文字）；
+CSV 在 ftle 模式追加 ftle 列；`export_scale/export_overlay` 存入 .dps。
 
 ## 10c. FTLE 分析
 
@@ -255,7 +256,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 25 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.9 MB，exe 约 434 KB。
+zip 约 3.9 MB，exe 约 436 KB。
 
 ## 13. 物理与数值边界
 

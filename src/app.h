@@ -16,6 +16,7 @@ typedef struct {
     const char *model;
     const char *load_path;
     const char *save_path;
+    const char *export_png_path;
     const char *axis_x;
     const char *axis_y;
     const char *channel;
