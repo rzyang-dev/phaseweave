@@ -1,266 +1,165 @@
-# 验证记录
+# 验证记录：二维动力学地图实验箱
 
-以下全部是本机实跑结果。构建命令、运行命令和输出都可复现。
+本机：Windows 10，1920×1080，125% 缩放；MinGW.org GCC 6.3、gfortran 6.3、
+Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 
-## 1. 环境
+## 1. 构建
+
+```text
+[1/6] checking Tcl/Tk runtime
+[2/6] embedding shaders (field, display, line, atlas)
+[3/6] compiling C skeleton (16 objects)
+[4/6] compiling Fortran kernel
+[5/6] compiling resources
+[6/6] linking (dynamic Tcl/Tk, static Lua/Fortran)
+OK -> dist/dp-phase/dp-phase.exe (712,704 bytes)
+      staged 9.9 MB
+      dist/dp-phase-1.4.0.zip (3.6 MB)
+```
 
 | 项目 | 值 |
 | --- | --- |
-| 系统 | Windows 10，1920×1080，125% 缩放 |
-| C | MinGW.org GCC 6.3.0（32 位） |
-| Fortran | gfortran 6.3.0 |
-| Lua | 5.2.0（静态 `liblua.a`） |
-| Tcl/Tk | 8.6.0（`tcl86.dll` 1,753,077 B，`tk86.dll` 1,692,530 B；脚本树 3.2 MB + 1.5 MB） |
-| GPU | NVIDIA GeForce GTX 1650 Ti，GL 4.3 |
-| 构建 | `pwsh -File build.ps1` |
+| exe | 712,704 B（GNU ld 的 PE 时间戳使每次链接的 SHA256 不同，不在这里固定） |
+| zip | 约 3.5–3.7 MB（docs 改动会改变 zip 哈希，不在这里固定） |
+| 解压 | 约 997 个文件，约 10 MB（含 docs） |
+| 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + **tcl86.dll / tk86.dll** |
+| 随包 DLL | tcl86.dll、tk86.dll、libgcc_s_dw2-1.dll、zlib1.dll |
+| 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/double-pendulum.lua |
 
-## 2. 构建结果
+已从 `dist/dp-phase-1.4.0.zip` 解压到独立目录，`/selftest` 通过；另做了一次
+“PATH 只有 C:\Windows\System32;C:\Windows、MINGW_ROOT 指向不存在目录”的干净副本启动，
+三个窗口和面板正常。
 
-```text
-[1/6] packaging Tcl/Tk runtime
-      981 files, 7.8 MB
-[2/6] embedding shaders
-      field.comp 2,794 B, display 1,427 B
-[3/6] compiling C skeleton
-      15 C objects
-[4/6] compiling Fortran kernel
-[5/6] compiling resources
-[6/6] linking (static)
-OK -> ...\dist\dp-phase.exe  (8,929,280 bytes)
-```
-
-导入表审计：
+## 2. 自检
 
 ```text
-KERNEL32.dll  USER32.dll  GDI32.dll  OPENGL32.dll  WINMM.dll  msvcrt.dll
-```
-
-没有 raylib、lua52.dll、libgfortran/libgcc DLL、VC 运行库，也没有 **tcl86.dll / tk86.dll**
-的链接期导入；Tcl/Tk 是运行时从 exe 的 RCDATA 1003 解包后动态加载的。
-
-```text
-SHA256  ACBFD38CC882F2066D03A0B9963103D58DCA2282838957C9F38A4C4E07FDAF65
-size    8,929,280 B
-```
-
-`dist/` 里只有 `dp-phase.exe`。
-
-## 3. 自检
-
-```text
---- selftest ---
+-- experiment / atlas
+  [ok]   atlas creation
+  [ok]   atlas cell preserves per-pixel masses
+  [ok]   energy channel is finite
+  [ok]   energy/range view colorizes
+  [ok]   rest energy matches m g l
+  [ok]   RK4 conserves energy for damping=0
 ...
--- phase view math
-  [ok]   zoom 1 shows the whole range
-  [ok]   screen centre maps to world origin (within 1 px)
-  [ok]   centre pick -> centre cell
-  [ok]   top-left pick -> (0,0)
-  [ok]   bottom-right pick -> (res-1,res-1)
-  [ok]   wheel zoom keeps the cursor world point fixed
-  [ok]   drag right moves the view left
-  [ok]   non-periodic view rejects a pick outside the field
-  [ok]   periodic view wraps a pick outside the field
-  [ok]   grid + selection circle produce overlay vertices
-  [ok]   grid and circle off -> no overlay
-  [ok]   grid only -> grid vertices
-  [ok]   circle without a selection -> no overlay
-...
-  [ok]   hot.status -> running / phase (paused=0 scheme=phase)
-  [ok]   hot.set_scheme(ember) is reflected by status
-  [ok]   unknown palette is rejected
-  [ok]   palette restored to phase
-...
-  [ok]   reload adopts a new script (res=128)
-...
-selftest: 53 passed, 0 failed
-
---- gpu selftest ---
-  [ok]   field texture uses GL_NEAREST (sharp pixels)
-...
-  [info] GPU 256x256 x 1 step: 0.166 ms, 395.0 Mcell-steps/s
-selftest: 59 passed, 0 failed
+selftest: 65 passed, 0 failed
 ```
 
-CPU 计时示例：`256x256 x 1 step: 7.45 ms, 8.79 Mcell-steps/s, 8 threads`；数值随系统负载波动。
-当前 `lua/hot.lua` 的配置是 64×64 / 2π / dt 0.01 / damping 0 / max_steps 8，测试对配置做了
-范围检查，不写死 256。
+`/gpu-selftest`（旧 GPU compute/显示回归 + 新增 CPU 测试）：**71/71**。
+GUI 的采样已经不走旧 GPU compute；GPU 只负责 atlas RGBA 显示和线叠加。
 
-## 4. 相空间视图
+## 3. 地图与通道
 
-### 4.1 64×64 锐利度
+### 3.1 角度图（θ1/θ2，颜色 = 最终 θ1）
 
-根因和修复见 [design.md](design.md#81-低分辨率模糊的根因)。修复前：
+![角度图](shot-phase.png)
 
-![修复前](blur-before.png)
+- 64×64，格线 + 选中圆圈；
+- 右键选中中心格（32,32），双摆窗口同步；
+- 颜色查找表来自外部 Lua 调色板。
 
-修复后：
+### 3.2 质量图（m1/m2，颜色 = 局部 omega_max 敏感性）
 
-![修复后](blur-after.png)
+![质量图](shot-mass.png)
 
-两次都是 64×64 场，修复后每个格子有清晰边界；格线是叠加层，不会改变场纹理的过滤。
+- 先在参数页设 m1/m2 为轴、范围 0.2–3、固定 θ1=0.5、θ2=0；
+- View = range（3×3 极差）；
+- 显示的是局部敏感性，不是原始能量；
+- 能量对质量是线性的，所以 energy+range 的 3×3 极差在内部为常数；这是物理上正确的，
+  因此 mass 预设使用 omega_max + range。
 
-实拍（64×64，格线 + 选中圆圈）：
+### 3.3 参数页
 
-![相空间](shot-phase.png)
+![参数页](shot-panel-params.png)
 
-### 4.2 格线 / 周期 / 圆圈
+- X/Y 轴 m1/m2；
+- 范围 0.2–3；
+- Res 64、dt 0.01、Steps/frame 8；
+- 10 个参数两列布局，Apply parameters 生效；
+- 改参数不 reload Lua。
 
-- G 关闭格线：相空间只剩色块；
-- P 打开周期视图，缩小到 0.76× 后相空间按周期平铺，没有黑边：
+### 3.4 检查器
 
-![周期视图](shot-periodic.png)
+![双摆检查器](shot-pendulum.png)
 
-- O 关闭圆圈：黄色选中圆圈消失，便于看完整图；
-- 以上三项都同时有面板控件和 G/P/O 快捷键；面板的 checked 状态由 `dp_status` 拉取。
+显示 cell、m1/m2、最终 θ/ω、damping、energy。当前选中中心格，m1=m2=1，
+damping=0，能量约 -29.39 J。
 
-### 4.3 拖拽、滚轮、右键
+## 4. 面板交互
 
-- 左键从 (350,350) 拖到 (470,410)，场和选中圆圈一起平移；非周期视图移出基础范围后出现
-  背景色（这是预期，周期视图则平铺）；
-- 滚轮以光标为中心缩放：自检的 “wheel zoom keeps the cursor world point fixed” 通过；
-  周期截图状态为 `Zoom: 0.76x`；
-- 右键中心 → cell (32,32)；右键 (24,20) → 双摆窗口显示对应 θ/ω。窗口标题/面板同步显示
-  `Selected: (24, 20)`。
+- 启动后默认 View 页：Color by theta1、View raw、Palette phase、Grid/Circle 开、Periodic 关；
+- 点 **Mass map**：
+  - 标题变为 `Double pendulum Atlas | CPU | ... | omega_max`
+  - 面板 Color by=omega_max、View=range、Last=masses；
+  - 参数页 X/Y=m1/m2、范围 0.2/3、theta1=0.5；
+- 点 **Angle map** 回到 θ1/θ2；
+- 右键选点后 Selected 更新，双摆窗口显示能量；
+- 面板 Quit/标题栏 ×、双摆 ×、相空间 × 都正常退出（此前测过）。
+- 键盘 Space/R/C/G/P/O/0/F5/Esc 在相空间窗口可用。
 
-## 5. 三个窗口
-
-| 窗口 | 外框 | 客户区 | 位置 |
-| --- | --- | --- | --- |
-| Phase Space | 706×735 | 700×700（正方形） | (19,48) |
-| Double Pendulum | 370×328 | 364×294 | (740,16) |
-| Control Panel | 382×587 | 364×540 | (740,355) |
-
-![三窗口](shot-windows.png)
-
-三个都是独立顶层窗口；没有把双摆/面板画进相空间窗口。双摆窗口：
-
-![双摆](shot-pendulum.png)
-
-## 6. 面板控件
-
-实拍：
-
-![面板](shot-panel.png)
-
-逐项验证（键盘与面板走同一个 `app_do_action`）：
-
-| 操作 | 结果 |
-| --- | --- |
-| Space / 面板 Pause | 按钮变 `Resume`，`Last: pause toggled` |
-| 鼠标点面板 Pause | 变回 `Pause`，仿真继续 |
-| C / 面板 Palette | `phase → ember`，面板下拉和状态行同步 |
-| K / 面板 Kernel | `GPU compute → Fortran CPU`，标题/状态同步 |
-| G / P / O | 面板勾选状态、相空间叠加层同步 |
-| Reset view / 0 | 回到 1.00×、中心 |
-| Reload / F5 | 见下一节 |
-| Quit / 标题栏 × | 进程退出 |
-
-面板的 Pause/Resume 点击是实际鼠标事件，不只是键盘路径。
-
-## 7. 热重载
-
-默认（无磁盘 hot.lua）：面板显示 `Source: embedded (RCDATA)`。
-
-把改过的 `hot.lua` 放到 `dist\dp-phase.exe` 旁边后启动：
-
-```text
-title before: Phase Space | GPU compute | 144 fps | 128x128 | ice
-Source:        hot.lua (disk override)
-```
-
-把磁盘脚本改成 96×96/ember，点面板的 `Reload hot.lua (F5)`：
-
-```text
-title after:  Phase Space | GPU compute | 144 fps | 96x96 | ember
-Panel last:   hot.lua reloaded (disk)
-```
-
-![带磁盘 hot.lua 的面板](shot-panel-hot.png)
-
-坏脚本会保留旧 Lua 状态（自检 `old Lua state survives a rejected reload`）；
-面板的 `Last:` 显示错误。
-
-## 8. 退出路径
-
-```text
-panel Quit button  -> exited 0
-panel WM_CLOSE     -> exited 0
-pendulum WM_CLOSE  -> exited 0
-phase WM_CLOSE     -> exited 0
-```
-
-## 9. 单 exe / 内嵌 Tcl/Tk
-
-把 `%TEMP%\dp-phase-tcl86-8.6.0` 整个删掉，并把 `MINGW_ROOT` 指向不存在的
-`C:\NoSuchTclDir`，启动 exe：
+无 MinGW 的干净副本：
 
 ```text
 title: Control Panel
 title: Double Pendulum
-title: Phase Space | GPU compute | 144 fps | 64x64 | phase
-panel: True
-runtime dir: True
-981
+title: Double pendulum Atlas | CPU | 144 fps | 64x64 | theta1
+panel=True
 ```
 
-即：没有工具链、没有缓存时，程序从 exe 解出 981 个文件到 TEMP 并显示面板。
-正常桌面会优先用 `%LOCALAPPDATA%\dp-phase\tcl86-8.6.0`。解包目录只是缓存，
-不是 `dist` 的外部依赖。
+## 5. 性能
 
-## 10. CPU / legacy 路径
+- 64×64 角度图：**142–147 fps**（CPU 线程池，1–8 步/帧）；
+- 质量图：约 100–144 fps；
+- 500 步 64×64 离线渲染：几十毫秒；
+- CPU 每步在 64×64 上约 2 ms（8 线程），UI 帧预算充足；
+- 256×256 计算量约 16 倍，CPU 仍可运行但会明显变慢；GPU compute atlas 尚未接入 GUI。
 
-```text
-dp-phase.exe /capture legacy64.bmp /cpu /legacy /res 64 /steps 0 /size 512
-capture: ... 512x512 steps=0 kernel=cpu legacy=1 renderer=...
-```
+## 6. 物理验收
 
-legacy 固定管线 + CPU 场，场纹理 NEAREST，64×64 的方块边界仍然清晰；格线/边框正常。
-（测试时另存了 `legacy64.png`，未入库。）
+- 静止能量：m1=m2=l1=l2=1，g=9.81，θ=0 → E=-29.43 J；
+- damping=0、dt=0.001、2000 步：能量相对漂移 < 1e-3；
+- 双摆 RK4 仍与 C 参考/Fortran 对照自检通过；
+- 质量轴时每格参数独立存储，能量/敏感性使用该格的质量，不使用全局统一值。
 
-## 11. 性能
+## 7. 低分辨率锐利度
 
-| 路径 | 分辨率 | 时间/步 | 吞吐 |
-| --- | --- | --- | --- |
-| GPU compute | 256×256 | 约 0.14–0.17 ms | 约 400–470 Mcell-steps/s |
-| Fortran 8 线程 | 256×256 | 约 7–8 ms | 约 8.5–9.5 Mcell-steps/s |
+历史问题（场纹理 `GL_LINEAR` 放大）仍然保留修复：当前 atlas 纹理是 `GL_NEAREST`，
+64×64 放大后是清晰方块。旧的 before/after 仍可参考：
 
-相空间窗口在 64×64 / 2π 下稳定 144 fps（vsync 上限）；面板每 250 ms 拉一次状态，
-不阻塞 GL。首次启动解包约 7.8 MB，之后走缓存。
+| before | after |
+| --- | --- |
+| ![before](blur-before.png) | ![after](blur-after.png) |
 
-## 12. 本次修掉的缺陷
+## 8. 本次修掉的实现问题
 
-| 现象 | 根因 | 修复 |
+| 问题 | 根因 | 修复 |
 | --- | --- | --- |
-| 64×64 看起来糊 | 场纹理 `GL_LINEAR` 放大 | 改 `GL_NEAREST`（现代 + legacy） |
-| 双摆窗口白屏、标题空 | `BitBlt` 前把旧 1×1 位图选回 mem DC，复制的是空位图；标题设置/重绘时序也不稳 | 先 `BitBlt` 再 `SelectObject(old)`；显式 `SetWindowText` + `InvalidateRect` |
-| 面板脚本报 `bad window path name ".f.hot"` | 脚本引用了没创建的父 frame | 改为 `.f.hot_src` / `.f.hot_row` |
-| 面板不出现，Tcl_Init 找不到 init.tcl | 只设了 Win32 环境变量，MinGW `getenv` 看不到；且 LOCALAPPDATA 在沙箱不可写 | `_putenv` 同步 CRT；LOCALAPPDATA 失败后回退 TEMP |
-| 面板首次不出现 | Tcl/Tk 运行时没有随 exe 分发 | 981 文件归档 + 解包 + 动态加载 |
+| GUI atlas 黑屏、只有网格 | 没有调用 `gpu_set_res`，fullscreen VAO 为 0 | 在 build_modern 中创建 VAO |
+| atlas 26 fps | 单线程 RK4 | 行带线程池，142 fps |
+| post range 全红/无对比 | 固定 *res/span 缩放，线性场内部恒定 | 两遍自动 min/max；mass 预设改用 omega_max |
+| 参数页被裁切 | 10 行单列 + 固定高度 | 两列参数 + 集成参数行 |
+| Tcl 查询 axes/view 只有一个元素 | 返回字符串外层多了一对 {} | 返回不带外层 braces 的列表 |
+| staging 14.9 MB / 嵌套 tcl8.6 | Copy-Item 目标已存在导致嵌套 | 先建目标目录，复制内容；stage 9.9 MB |
+| 能量显示类型不匹配 | float[4] 传给 double[4] | 局部 double 转换 |
 
-## 13. 已知限制
+## 9. 已知边界
 
-- 面板第一次启动要解包约 7.8 MB；之后走缓存。
-- 面板固定高度按工作区 clamp；很矮的屏幕需拉大面板。
-- GPU/Fortran 舍入不同；默认 GPU。
-- legacy 固定管线没有现代路径的视图 uniform 性能。
-- exe 未签名，Windows 首次运行可能出现 SmartScreen 提示。
+1. 模型仍只有内置双摆；没有第二个模型/表达式 DSL。
+2. GUI 采样是 CPU；旧 GPU compute 只用于 selftest，不是 GUI 后端。
+3. Lua 目前只提供调色板/meta；参数 schema 在 C。
+4. 没有 colorbar、轴标签、单位、导出 CSV/PNG、保存实验。
+5. 能量通道固定 ±50 J；极端质量/长度可能饱和。
+6. 没有 3D 切片/滑块。
+7. exe 未签名；zip 首次运行可能触发 SmartScreen。
 
-## 14. 复现命令
+## 10. 复现
 
 ```powershell
-# 构建 + 自检
 pwsh -File build.ps1
+.\dist\dp-phase\dp-phase.exe
+.\dist\dp-phase\dp-phase.exe /selftest
+.\dist\dp-phase\dp-phase.exe /gpu-selftest
 
-# 只构建
-pwsh -File build.ps1 -NoTest
-
-# 单项自检
-.\dist\dp-phase.exe /selftest
-.\dist\dp-phase.exe /gpu-selftest
-
-# 64x64 离屏截图（CPU/legacy）
-.\dist\dp-phase.exe /capture out.bmp /cpu /legacy /res 64 /steps 0 /size 512
-
-# 交互
-.\dist\dp-phase.exe
+# 角度/质量图离屏
+.\dist\dp-phase\dp-phase.exe /shot angle.bmp /res 64 /steps 300
+.\dist\dp-phase\dp-phase.exe /shot mass.bmp /res 64 /steps 300 /axisx m1 /axisy m2 /channel omega_max /post range
 ```
