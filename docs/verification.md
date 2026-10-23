@@ -8,15 +8,15 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (23 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (790,528 bytes)
-      staged 10.3 MB
-      dist/dp-phase-1.9.0.zip (3.6 MB)
+OK -> dist/dp-phase/dp-phase.exe (793,088 bytes)
+      staged 10.4 MB
+      dist/dp-phase-1.10.0.zip (3.9 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 790,528 B |
-| zip | 约 3.7 MB（docs 改动会改变 zip 字节数） |
+| exe | 793,088 B |
+| zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
 | 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/experiment.lua |
@@ -48,10 +48,11 @@ OK -> dist/dp-phase/dp-phase.exe (790,528 bytes)
   [ok]   custom step matches built-in Hénon
   [ok]   GPU custom state matches CPU
   [ok]   GPU custom channels match CPU
+  [ok]   GPU custom atlas matches CPU
 selftest: 100 passed, 0 failed
 ```
 
-`/gpu-selftest`：**112/112**（76 CPU + 旧 GPU 回归）。
+`/gpu-selftest`：**115/115**（100 CPU + 旧 GPU + 8 项表达式/GPU atlas 回归）。
 GUI 采样仍是 CPU；GPU 只负责 atlas RGBA 显示和线叠加。
 
 ## 3. 双摆三窗口
@@ -198,8 +199,15 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
 selftest: 112 passed, 0 failed
 ```
 
-测试用单格、10 步 Hénon 表达式；GPU float 与 CPU double 容差 1e-5。
-GUI atlas 仍走 CPU，GPU compute atlas 是下一步。
+测试用单格 10 步 + 8×8 atlas 2 步 Hénon 表达式；单格容差 1e-5，atlas 2 步逐值一致。
+GUI 的 **Kernel** 下拉可选 CPU/GPU（仅 Lua 自定义模型）：
+
+![GPU 自定义模型](shot-custom-gpu.png)
+
+![GPU 面板](shot-custom-gpu-panel.png)
+
+标题/状态显示 GPU；双摆/Logistic/Hénon 选择 GPU 会回退 CPU 并提示。
+CPU double 与 GPU float 在长时间混沌轨道上会分叉，这是精度差异。
 
 ## 11. 性能
 
@@ -242,6 +250,7 @@ pwsh -File build.ps1
 .\dist\dp-phase\dp-phase.exe /model logistic
 .\dist\dp-phase\dp-phase.exe /model henon
 .\dist\dp-phase\dp-phase.exe /model custom
+.\dist\dp-phase\dp-phase.exe /model custom /gpu
 .\dist\dp-phase\dp-phase.exe /selftest
 .\dist\dp-phase\dp-phase.exe /gpu-selftest
 

@@ -49,6 +49,8 @@ struct Gpu {
     GLuint custom_prog;
     GLuint custom_cells;
     GLuint custom_chans;
+    size_t custom_cells_bytes;
+    size_t custom_chans_bytes;
     GLint  u_custom_res, u_custom_steps;
 
     char version[160];
@@ -791,14 +793,26 @@ int gpu_run_custom(Gpu *g, const float *cells, int res, int steps,
     n = (size_t)res * (size_t)res;
     cn = n * 16u;
     if (n > (size_t)32768u) { if (err) snprintf(err, errsz, "custom compute: res too large"); return 0; }
-    if (g->custom_cells) g->gl.DeleteBuffers(1, &g->custom_cells);
-    if (g->custom_chans) g->gl.DeleteBuffers(1, &g->custom_chans);
-    g->gl.GenBuffers(1, &g->custom_cells);
-    g->gl.GenBuffers(1, &g->custom_chans);
+    {
+        size_t cb = cn * sizeof(float);
+        size_t hb = n * 4u * sizeof(float);
+        if (!g->custom_cells || g->custom_cells_bytes != cb) {
+            if (g->custom_cells) g->gl.DeleteBuffers(1, &g->custom_cells);
+            g->gl.GenBuffers(1, &g->custom_cells);
+            g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_cells);
+            g->gl.BufferData(DP_GL_SHADER_STORAGE_BUFFER, (ptrdiff_t)cb, NULL, 0x88E8);
+            g->custom_cells_bytes = cb;
+        }
+        if (!g->custom_chans || g->custom_chans_bytes != hb) {
+            if (g->custom_chans) g->gl.DeleteBuffers(1, &g->custom_chans);
+            g->gl.GenBuffers(1, &g->custom_chans);
+            g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_chans);
+            g->gl.BufferData(DP_GL_SHADER_STORAGE_BUFFER, (ptrdiff_t)hb, NULL, 0x88E8);
+            g->custom_chans_bytes = hb;
+        }
+    }
     g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_cells);
-    g->gl.BufferData(DP_GL_SHADER_STORAGE_BUFFER, (ptrdiff_t)(cn * sizeof(float)), cells, 0x88E4);
-    g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_chans);
-    g->gl.BufferData(DP_GL_SHADER_STORAGE_BUFFER, (ptrdiff_t)(n * 4u * sizeof(float)), NULL, 0x88E4);
+    g->gl.BufferSubData(DP_GL_SHADER_STORAGE_BUFFER, 0, (ptrdiff_t)(cn * sizeof(float)), cells);
     g->gl.BindBufferBase(DP_GL_SHADER_STORAGE_BUFFER, 0, g->custom_cells);
     g->gl.BindBufferBase(DP_GL_SHADER_STORAGE_BUFFER, 1, g->custom_chans);
     g->gl.UseProgram(g->custom_prog);

@@ -35,6 +35,12 @@ struct App {
     Experiment exp;
     CustomModel custom;
     int      has_custom;
+    int      backend_gpu;
+    int      gpu_custom_ok;
+    float   *gpu_cells;
+    float   *gpu_chans;
+    size_t   gpu_cells_cap;
+    size_t   gpu_chans_cap;
     int      use_lua;
     int      legacy;
 
@@ -94,6 +100,8 @@ static void app_render_phase(App *a);
 static void app_apply_experiment(App *a);
 static void app_colorize(App *a);
 static int  app_apply_schema(App *a, int defaults);
+static int  app_prepare_custom_gpu(App *a);
+static int  app_gpu_advance(App *a, int steps);
 static void app_set_model(App *a, const char *id)
 {
     const Model *m;
@@ -112,6 +120,11 @@ static void app_set_model(App *a, const char *id)
         atlas_destroy(a->atlas);
         a->atlas = atlas_create(&a->exp, a->exp.res, err, sizeof(err));
         if (!a->atlas) app_error_box(a, err[0] ? err : "atlas creation failed");
+    }
+    if (strcmp(a->exp.model, "custom") != 0) a->backend_gpu = 0;
+    else {
+        app_prepare_custom_gpu(a);
+        if (!a->gpu_custom_ok) a->backend_gpu = 0;
     }
     if (a->plat && !a->opt.capture_path && strcmp(a->exp.model, "double_pendulum") == 0) {
         a->pview = pendulum_view_create(a->inst, L"Double Pendulum",
@@ -179,8 +192,9 @@ static void app_set_title(App *a, int force)
     if (!a->plat) return;
     a->title_t = now;
     exp_channel_info(&a->exp, a->exp.channel, &ci);
-    snprintf(buf, sizeof(buf), "%s Atlas | CPU | %d fps | %dx%d | %s%s",
-             a->exp.title, (int)(a->fps + 0.5), a->exp.res, a->exp.res,
+    snprintf(buf, sizeof(buf), "%s Atlas | %s | %d fps | %dx%d | %s%s",
+             a->exp.title, (a->backend_gpu && a->gpu_custom_ok) ? "GPU" : "CPU",
+             (int)(a->fps + 0.5), a->exp.res, a->exp.res,
              ci.name, a->exp.paused ? " | paused" : "");
     platform_set_title(a->plat, buf);
 }
@@ -233,9 +247,63 @@ static void app_apply_experiment(App *a)
     app_set_title(a, 1);
 }
 
+static int app_prepare_custom_gpu(App *a)
+{
+    char glsl[32768], err[1024];
+    if (!a) return 0;
+    a->gpu_custom_ok = 0;
+    if (!a->gpu) return 0;
+    if (!a->has_custom) return 0;
+    if (strcmp(a->exp.model, "custom") != 0) return 0;
+    glsl[0] = 0; err[0] = 0;
+    if (!custom_model_glsl(&a->custom, glsl, sizeof(glsl), err, sizeof(err))) return 0;
+    if (!gpu_compile_custom(a->gpu, glsl, err, sizeof(err))) return 0;
+    a->gpu_custom_ok = 1;
+    return 1;
+}
+
+static int app_gpu_advance(App *a, int steps)
+{
+    int res;
+    size_t n, cn, hn;
+    char err[512];
+    float *cells;
+    if (!a || !a->atlas || !a->gpu || !a->gpu_custom_ok || !a->backend_gpu) return 0;
+    res = atlas_res(a->atlas);
+    n = (size_t)res * (size_t)res;
+    cn = n * 16u;
+    hn = n * 4u;
+    if (!a->gpu_cells || a->gpu_cells_cap < cn) {
+        float *p = (float *)realloc(a->gpu_cells, cn * sizeof(float));
+        if (!p) return 0;
+        a->gpu_cells = p; a->gpu_cells_cap = cn;
+    }
+    if (!a->gpu_chans || a->gpu_chans_cap < hn) {
+        float *p = (float *)realloc(a->gpu_chans, hn * sizeof(float));
+        if (!p) return 0;
+        a->gpu_chans = p; a->gpu_chans_cap = hn;
+    }
+    cells = atlas_cell_data(a->atlas);
+    memcpy(a->gpu_cells, cells, cn * sizeof(float));
+    err[0] = 0;
+    if (!gpu_run_custom(a->gpu, a->gpu_cells, res, steps,
+                        a->gpu_cells, a->gpu_chans, err, sizeof(err))) {
+        a->backend_gpu = 0;
+        app_set_last(a, err[0] ? err : "GPU failed; CPU fallback");
+        return 0;
+    }
+    memcpy(cells, a->gpu_cells, cn * sizeof(float));
+    memcpy(atlas_channel_data(a->atlas), a->gpu_chans, hn * sizeof(float));
+    app_colorize(a);
+    app_read_selected(a);
+    a->steps_last = steps;
+    return 1;
+}
+
 static void app_advance(App *a, int steps)
 {
     if (!a || !a->atlas) return;
+    if (a->backend_gpu && app_gpu_advance(a, steps > 0 ? steps : 0)) return;
     atlas_step(a->atlas, &a->exp, steps > 0 ? steps : 0);
     app_colorize(a);
     a->steps_last = steps;
@@ -321,6 +389,12 @@ static void app_reload(App *a)
         }
     }
     app_apply_schema(a, 0);
+    if (strcmp(a->exp.model, "custom") == 0) {
+        app_prepare_custom_gpu(a);
+        if (!a->gpu_custom_ok) a->backend_gpu = 0;
+    } else {
+        a->backend_gpu = 0;
+    }
     app_load_palette(a);
     app_apply_experiment(a);
     app_set_last(a, "schema/palette reloaded");
@@ -568,6 +642,25 @@ static int app_do_action(App *a, const char *name, const char *value)
         app_set_model(a, value);
         return 1;
     }
+    if (strcmp(name, "backend_set") == 0) {
+        if (value && strcmp(value, "gpu") == 0) {
+            if (strcmp(a->exp.model, "custom") != 0 || !a->has_custom) {
+                a->backend_gpu = 0;
+                app_set_last(a, "GPU backend requires a Lua expression model");
+            } else if (!app_prepare_custom_gpu(a)) {
+                a->backend_gpu = 0;
+                app_set_last(a, "GPU shader unavailable; CPU fallback");
+            } else {
+                a->backend_gpu = 1;
+                app_set_last(a, "backend GPU");
+            }
+        } else {
+            a->backend_gpu = 0;
+            app_set_last(a, "backend CPU");
+        }
+        app_set_title(a, 1);
+        return 1;
+    }
     if (strcmp(name, "export_png") == 0) { app_export_png(a); return 1; }
     if (strcmp(name, "export_csv") == 0) { app_export_csv(a); return 1; }
     if (strcmp(name, "apply") == 0) { app_apply_experiment(a); return 1; }
@@ -649,7 +742,7 @@ static void panel_status_cb(void *user, PanelStatus *st)
     if (!a || !st) return;
     memset(st, 0, sizeof(*st));
     st->paused = a->exp.paused;
-    st->kernel_gpu = 0;
+    st->kernel_gpu = a->backend_gpu && a->gpu_custom_ok;
     st->res = a->exp.res;
     st->fps = (int)(a->fps + 0.5);
     st->grid = a->exp.grid;
@@ -886,6 +979,10 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
         a->legacy = gpu_legacy(a->gpu);
         platform_set_vsync(a->plat, gpu_vsync(a->gpu));
         gpu_set_range(a->gpu, 1.0);
+        app_prepare_custom_gpu(a);
+        if (opt->force_kernel == DP_KERNEL_GPU && a->gpu_custom_ok &&
+            strcmp(a->exp.model, "custom") == 0)
+            a->backend_gpu = 1;
 
         if (!opt->capture_path) {
             int side_px = platform_width(a->plat);
@@ -947,6 +1044,8 @@ void app_destroy(App *a)
     if (a->atlas) atlas_destroy(a->atlas);
     if (a->lua) lua_hot_destroy(a->lua);
     if (a->plat) platform_destroy(a->plat);
+    free(a->gpu_cells);
+    free(a->gpu_chans);
     free(a);
 }
 

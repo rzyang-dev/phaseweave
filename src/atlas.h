@@ -18,6 +18,9 @@ int    atlas_threads(const Atlas *a);
 int    atlas_res(const Atlas *a);
 int    atlas_cells(const Atlas *a);
 const unsigned char *atlas_rgba(const Atlas *a);
+float *atlas_cell_data(Atlas *a);
+float *atlas_channel_data(Atlas *a);
+int    atlas_cell_floats(void);
 void   atlas_read_cell(const Atlas *a, int index, float state[MODEL_MAX_STATE], float vals[MODEL_MAX_PARAMS], float ch[MODEL_MAX_CHANNELS]);
 
 #endif

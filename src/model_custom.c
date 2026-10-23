@@ -230,7 +230,7 @@ int custom_model_glsl(const CustomModel *cm, char *out, size_t outsz,
     glsl_append(out, outsz, &pos, "    float ny = %s;\n", step_y);
     glsl_append(out, outsz, &pos,
         "    sx = nx; sy = ny;\n"
-        "    if (isnan(sx) || isnan(sy) || isinf(sx) || isinf(sy)) { sx = 0.0; sy = 0.0; }\n"
+        "    if (isnan(sx) || isnan(sy) || isinf(sx) || isinf(sy) || abs(sx) > 1e12 || abs(sy) > 1e12) { sx = 0.0; sy = 0.0; }\n"
         "  }\n"
         "  cells[i*16+0] = sx; cells[i*16+1] = sy;\n");
     for (i = 0; i < cm->nchannels; ++i)

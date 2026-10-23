@@ -184,7 +184,7 @@ Export CSV 每格一行，列名前缀 `x_`/`y_`/`state_`/`ch_`，避免不同�
 
 标题下 Model 下拉；四个 tab：
 
-- **View**：通道、后处理、调色板、颜色条、轴读数、Export PNG/CSV、Grid/Periodic/Circle、Reset view、Angle/Mass 预设；
+- **View**：通道、后处理、调色板、Kernel CPU/GPU、颜色条、轴读数、Export PNG/CSV、Grid/Periodic/Circle、Reset view、Angle/Mass 预设；
 - **Parameters**：X/Y 轴、范围、Res/dt/Steps、模型参数、Apply；1080p 下面板 620 客户区；
 - **Script**：`experiments/experiment.lua`、Reload script（schema + palette）。
 - **Inspect**：选中像素的轴值/状态/通道值；所有模型通用。
@@ -225,7 +225,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 23 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.7 MB，exe 约 790 KB。
+zip 约 3.7 MB，exe 约 794 KB。
 
 ## 13. 物理与数值边界
 
@@ -250,6 +250,7 @@ zip 约 3.7 MB，exe 约 790 KB。
 - M4b（已完成）：Lua schema 元数据 + F5 热重载；
 - M5a（已完成）：Lua 2D map 表达式 → CPU 字节码；
 - M5b（已完成）：GLSL 代码生成 + GPU 单格验证；
-- M6：GPU compute atlas + CPU 回退、控制流/ODE、实验保存/加载；
+- M6（已完成）：GPU compute atlas + CPU 回退（自定义模型）；
+- 后续：控制流/ODE 表达式、实验保存/加载、全模型 GPU。
 - M6：GPU compute atlas、FTLE/盆地、Poincaré、切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。

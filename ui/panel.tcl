@@ -78,8 +78,14 @@ bind .f.nb.view.ch <<ComboboxSelected>> {act channel_set [.f.nb.view.ch get]}
 bind .f.nb.view.post <<ComboboxSelected>> {act post_set [.f.nb.view.post get]}
 bind .f.nb.view.pal <<ComboboxSelected>> {act palette_set [.f.nb.view.pal get]}
 
+ttk::label .f.nb.view.kl -text "Kernel" -font DpBody -anchor w
+ttk::combobox .f.nb.view.kern -state readonly -values {CPU GPU} -width 12 -takefocus 0
+grid .f.nb.view.kl -row 4 -column 0 -sticky w -pady 2
+grid .f.nb.view.kern -row 4 -column 1 -sticky ew -pady 2
+bind .f.nb.view.kern <<ComboboxSelected>> {act backend_set [string tolower [.f.nb.view.kern get]]}
+
 ttk::frame .f.nb.view.cbar
-grid .f.nb.view.cbar -row 4 -column 0 -columnspan 2 -sticky ew -pady {6 0}
+grid .f.nb.view.cbar -row 5 -column 0 -columnspan 2 -sticky ew -pady {6 0}
 ttk::label .f.nb.view.cbar.name -text "color" -font DpSmall -anchor w
 ttk::label .f.nb.view.cbar.max -text "" -font DpSmall -anchor e
 canvas .f.nb.view.cbar.c -height 12 -highlightthickness 1 -highlightbackground "#999" -background "#ddd"
@@ -93,7 +99,7 @@ grid columnconfigure .f.nb.view.cbar 1 -weight 1
 bind .f.nb.view.cbar.c <Configure> {draw_colorbar}
 
 ttk::frame .f.nb.view.checks
-grid .f.nb.view.checks -row 5 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+grid .f.nb.view.checks -row 6 -column 0 -columnspan 2 -sticky ew -pady {4 0}
 ttk::checkbutton .f.nb.view.checks.g -text "Grid" -variable ::vGrid -command {act grid $::vGrid} -takefocus 0
 ttk::checkbutton .f.nb.view.checks.p -text "Periodic" -variable ::vPeriodic -command {act periodic $::vPeriodic} -takefocus 0
 ttk::checkbutton .f.nb.view.checks.c -text "Circle" -variable ::vCircle -command {act circle $::vCircle} -takefocus 0
@@ -101,9 +107,9 @@ grid .f.nb.view.checks.g -row 0 -column 0 -sticky w
 grid .f.nb.view.checks.p -row 0 -column 1 -sticky w -padx 6
 grid .f.nb.view.checks.c -row 0 -column 2 -sticky w
 ttk::button .f.nb.view.rv -text "Reset view" -command {act view_reset} -takefocus 0
-grid .f.nb.view.rv -row 6 -column 0 -columnspan 2 -sticky w -pady {4 0}
+grid .f.nb.view.rv -row 7 -column 0 -columnspan 2 -sticky w -pady {4 0}
 ttk::frame .f.nb.view.presets
-grid .f.nb.view.presets -row 7 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+grid .f.nb.view.presets -row 8 -column 0 -columnspan 2 -sticky ew -pady {4 0}
 ttk::button .f.nb.view.presets.a -text "Angle map" -command {preset angles} -takefocus 0
 ttk::button .f.nb.view.presets.m -text "Mass map" -command {preset masses} -takefocus 0
 grid .f.nb.view.presets.a -row 0 -column 0 -sticky ew -padx {0 3}
@@ -112,7 +118,7 @@ grid columnconfigure .f.nb.view.presets 0 -weight 1
 grid columnconfigure .f.nb.view.presets 1 -weight 1
 
 ttk::frame .f.nb.view.exports
-grid .f.nb.view.exports -row 8 -column 0 -columnspan 2 -sticky ew -pady {6 0}
+grid .f.nb.view.exports -row 9 -column 0 -columnspan 2 -sticky ew -pady {6 0}
 ttk::button .f.nb.view.exports.png -text "Export PNG" -command {act export_png} -takefocus 0
 ttk::button .f.nb.view.exports.csv -text "Export CSV" -command {act export_csv} -takefocus 0
 grid .f.nb.view.exports.png -row 0 -column 0 -sticky ew -padx {0 3}
@@ -121,9 +127,9 @@ grid columnconfigure .f.nb.view.exports 0 -weight 1
 grid columnconfigure .f.nb.view.exports 1 -weight 1
 
 ttk::label .f.nb.view.hint -text "Mouse: drag=pan, wheel=zoom, right-click=pick. Keyboard: R Space C G P O 0 F5 Esc." -font DpSmall -foreground "#555" -wraplength 320 -justify left
-grid .f.nb.view.hint -row 9 -column 0 -columnspan 2 -sticky ew -pady {8 0}
+grid .f.nb.view.hint -row 10 -column 0 -columnspan 2 -sticky ew -pady {8 0}
 ttk::label .f.nb.view.axes -text "" -font DpSmall -foreground "#555" -anchor w -wraplength 330
-grid .f.nb.view.axes -row 10 -column 0 -columnspan 2 -sticky ew
+grid .f.nb.view.axes -row 11 -column 0 -columnspan 2 -sticky ew
 ttk::frame .f.nb.insp -padding 8
 ttk::label .f.nb.insp.h -text "Selected pixel" -font DpTitle -anchor w
 grid .f.nb.insp.h -row 0 -column 0 -sticky ew
@@ -260,6 +266,9 @@ proc update_ui {} {
     set ::vCircle $::s(circle)
     .f.stat.line1 configure -text "$::s(kernel_label)  |  $::s(fps) fps  |  $::s(res)x$::s(res)"
     .f.stat.line2 configure -text "Selected: $::s(sel)  |  Zoom: $::s(zoom)x"
+    if {[info exists ::s(kernel)]} {
+        .f.nb.view.kern set [expr {$::s(kernel) eq "gpu" ? "GPU" : "CPU"}]
+    }
     if {[catch {set v [dp_query view]}] == 0} {
         lassign $v ch post pal
         .f.nb.view.ch set $ch

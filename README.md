@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.9.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.10.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -98,8 +98,20 @@ M5b 又加了 **GLSL 代码生成**：`expr_to_glsl()` 把 postfix 字节码转�
 `custom_model_glsl()` 生成 compute shader，`gpu_compile_custom/gpu_run_custom` 编译并执行。
 GPU 单格结果与 CPU 逐值匹配（双精度 CPU vs float GPU，容差 1e-5）。
 
-当前限制：只支持 2 状态 map、无控制流/ODE；GLSL 只做了单格验证，
-GUI atlas 仍走 CPU；CPU 64×64 仍约 140 fps。
+**M6：GPU compute atlas 已接 GUI（自定义模型）**。View 页的 **Kernel** 可选 CPU/GPU：
+
+- GPU 后端把整张 Atlas cells 上传，dispatch 表达式 compute，再读回 state/channels，
+  交给现有 CPU colorize；
+- 双摆/Logistic/Hénon 仍只支持 CPU；选择 GPU 会自动回退并提示；
+- 标题/状态显示 GPU；CPU/GPU 结果在 2 步 atlas 测试中一致；
+- GPU float 与 CPU double 在长时间混沌轨道上会分叉，这是预期。
+
+![GPU 自定义模型](docs/shot-custom-gpu.png)
+
+![GPU 面板](docs/shot-custom-gpu-panel.png)
+
+当前限制：只支持 2 状态 map、无控制流/ODE；GPU 只对 Lua 自定义模型；
+CPU/GPU 长时间混沌轨道会因精度分叉。
 
 ![Lua 表达式模型](docs/shot-custom.png)
 
@@ -117,7 +129,7 @@ GUI atlas 仍走 CPU；CPU 64×64 仍约 140 fps。
 
 ![模型面板](docs/shot-panel.png)
 
-**View**：Model、Color by、View（raw/gradient/range/variance）、Palette、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV。
+**View**：Model、Color by、View（raw/gradient/range/variance）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV。
 
 **Parameters**：X/Y 轴、范围、Res、dt、Steps/frame、模型参数、Apply parameters。
 面板高度按屏幕自适应（1080p 下 620 客户区），双摆 10 个参数能完整显示。
@@ -199,27 +211,27 @@ src/experiment.c/h  模型无关的轴/范围/通道 schema + Lua metadata 应�
 src/schema.h        Lua↔Experiment 的 schema 元数据
 src/atlas.c/h       每像素 state+params、调用模型、通道、后处理、RGBA
 src/app.c           窗口/帧循环/模型切换/选择/预设
-src/gpu.c           OpenGL 4.3 上下文、动态 compute 编译、atlas RGBA 显示、线叠加
+src/gpu.c           OpenGL 4.3 上下文、动态 compute、GPU atlas、显示
 src/phase_view.c    归一化 [0,1] 视图、pick、平移/缩放、格线/圆圈
 src/panel.c         Tcl/Tk 宿主与 dp_action/dp_status/dp_query
 src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 100 项；含 GPU 的 112 项
+src/selftest.c      CPU 100 项；含 GPU 的 115 项
 ```
 
 ## 验证
 
 - `/selftest`：**100/100**
-- `/gpu-selftest`：**112/112**
+- `/gpu-selftest`：**115/115**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
 ## 已知边界 / 下一步
 
-1. Lua 2D map 已生成 CPU 字节码和 GLSL；GLSL 只做了单格验证，还没有控制流/ODE 与 GUI atlas 集成。
-2. GUI 采样是 CPU；GPU compute atlas 未接。
+1. Lua 2D map 已生成 CPU 字节码和 GLSL，GPU atlas 已接自定义模型；还没有控制流/ODE 与全模型 GPU。
+2. GPU compute atlas 目前只支持 Lua 自定义模型；双摆/Logistic/Hénon 走 CPU。
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 没有文件选择对话框、实验保存/加载；导出固定到 exe 旁 exports/。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
@@ -229,4 +241,4 @@ src/selftest.c      CPU 100 项；含 GPU 的 112 项
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.9.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.10.0.zip`

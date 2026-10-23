@@ -257,6 +257,9 @@ int atlas_res(const Atlas *a) { return a ? a->res : 0; }
 int atlas_cells(const Atlas *a) { return a ? a->cells : 0; }
 int atlas_threads(const Atlas *a) { return a && a->pool ? pool_threads(a->pool) : 0; }
 const unsigned char *atlas_rgba(const Atlas *a) { return a ? a->rgba : NULL; }
+float *atlas_cell_data(Atlas *a) { return a ? a->cells_data : NULL; }
+float *atlas_channel_data(Atlas *a) { return a ? a->channels : NULL; }
+int atlas_cell_floats(void) { return 4 + MODEL_MAX_PARAMS; }
 
 void atlas_read_cell(const Atlas *a, int index, float state[MODEL_MAX_STATE], float vals[MODEL_MAX_PARAMS], float ch[MODEL_MAX_CHANNELS])
 {

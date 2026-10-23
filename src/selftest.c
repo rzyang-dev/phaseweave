@@ -757,6 +757,43 @@ static void test_gpu_custom(Gpu *g)
         check(fabs(ch[0] - cc[0]) < 1e-4 && fabs(ch[2] - cc[2]) < 1e-4,
               "GPU custom channels match CPU");
     }
+    {
+        Experiment e;
+        Atlas *a;
+        int n, stride = atlas_cell_floats();
+        float *init, *cpu, *cpu_ch, *gout, *gch;
+        exp_init(&e, &cm.model);
+        e.res = 8;
+        a = atlas_create(&e, 8, err, sizeof(err));
+        check(a != NULL, "custom atlas creation");
+        if (a) {
+            n = 8 * 8;
+            init = (float *)malloc((size_t)n * stride * sizeof(float));
+            cpu = (float *)malloc((size_t)n * stride * sizeof(float));
+            cpu_ch = (float *)malloc((size_t)n * 4u * sizeof(float));
+            gout = (float *)malloc((size_t)n * stride * sizeof(float));
+            gch = (float *)malloc((size_t)n * 4u * sizeof(float));
+            memcpy(init, atlas_cell_data(a), (size_t)n * stride * sizeof(float));
+            atlas_step(a, &e, 2);
+            memcpy(cpu, atlas_cell_data(a), (size_t)n * stride * sizeof(float));
+            memcpy(cpu_ch, atlas_channel_data(a), (size_t)n * 4u * sizeof(float));
+            check(gpu_run_custom(g, init, 8, 2, gout, gch, err, sizeof(err)) == 1,
+                  "GPU custom atlas dispatch");
+            {
+                double md = 0.0;
+                int j;
+                for (j = 0; j < n; ++j) {
+                    double dx = fabs(gout[j * stride + 0] - cpu[j * stride + 0]);
+                    double dy = fabs(gout[j * stride + 1] - cpu[j * stride + 1]);
+                    if (dx > md) md = dx;
+                    if (dy > md) md = dy;
+                }
+                checkf(md < 1e-3, "GPU custom atlas matches CPU (max %.3e)", md);
+            }
+            free(init); free(cpu); free(cpu_ch); free(gout); free(gch);
+            atlas_destroy(a);
+        }
+    }
 }
 
 static void test_gpu(void)
