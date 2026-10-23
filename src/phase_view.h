@@ -33,5 +33,8 @@ void   pv_zoom_at(PhaseView *v, double range, int w, int h, int sx, int sy, doub
 int    pv_build_overlay(const PhaseView *v, double range, int res, int w, int h,
                         int sel_x, int sel_y, float *verts, int max_verts,
                         int *grid_verts);
+int    pv_build_axis_ticks(const PhaseView *v, double range, int w, int h,
+                           double xmin, double xmax, double ymin, double ymax,
+                           float *verts, int max_verts);
 
 #endif

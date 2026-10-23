@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (25 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (815,616 bytes)
-      staged 10.4 MB
-      dist/dp-phase-1.14.0.zip (3.9 MB)
+OK -> dist/dp-phase/dp-phase.exe (425,984 bytes)
+      staged 10.1 MB
+      dist/dp-phase-1.15.0.zip (3.9 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 815,616 B |
+| exe | 425,984 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -231,24 +231,30 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 
 ![Script 页](shot-panel-script.png)
 
-## 12. 控制流表达式
+## 12. 地图数字刻度
+
+地图底边/左边绘制 min/mid/max 数字 tick；数值按 zoom/pan 换算，轴名在面板读数。
+
+![地图刻度](shot-axis.png)
+
+## 13. 控制流表达式
 
 `expr.c` 新增比较/逻辑/三元/`if(cond,a,b)`。CPU 用数值真值，GLSL 条件使用 bool；
 自定义 `x_abs` 改为 `if(x < 0, -x, x)`，CPU/GPU 单格测试通过。
 
-## 13. ODE 表达式
+## 14. ODE 表达式
 
 `type="ode"` 使用 `deriv={x=...,y=...}`；CPU 与 GLSL 都走 RK4，`dt` 来自实验。
 自检用 `x'=y, y'=-x` 与解析解 `cos(1), -sin(1)` 对照；GPU 同一结果。
 
-## 14. 性能
+## 15. 性能
 
 - 双摆 64×64：142–147 fps；
 - Logistic/Hénon 64×64：140+ fps；
 - 64×64 双摆每步约 2 ms（8 线程）；
 - 256×256 CPU 仍可算，但约 16 倍成本；GPU atlas 对全模型可用，仍有 CPU 回退。
 
-## 15. 本次修掉的问题
+## 16. 本次修掉的问题
 
 | 问题 | 根因 | 修复 |
 | --- | --- | --- |
@@ -263,7 +269,7 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 | CSV 列名冲突 | x/y/state/channel 同名 | 加 `x_/y_/state_/ch_` 前缀 |
 | Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/experiment.lua |
 
-## 16. 已知边界
+## 17. 已知边界
 
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
@@ -274,7 +280,7 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
 8. 没有 3D 切片/连续化。
 
-## 17. 复现
+## 18. 复现
 
 ```powershell
 pwsh -File build.ps1

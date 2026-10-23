@@ -73,6 +73,8 @@ struct App {
     unsigned char lut[DP_LUT_N * 3];
     char     hot_path[MAX_PATH];
     char     title[512];
+    float   *overlay;
+    int      overlay_cap;
 };
 
 static int app_apply_schema(App *a, int defaults)
@@ -1017,8 +1019,15 @@ void app_key(App *a, int vk, int down)
 
 static void app_render_phase(App *a)
 {
-    static float verts[16384 * 6];
-    int w, h, grid_n = 0, total;
+    float *verts;
+    int w, h, grid_n = 0, total, axis_start, axis_n;
+    if (!a->overlay || a->overlay_cap < 32768) {
+        float *p = (float *)realloc(a->overlay, 32768u * 6u * sizeof(float));
+        if (!p) return;
+        a->overlay = p;
+        a->overlay_cap = 32768;
+    }
+    verts = a->overlay;
     if (!a || !a->gpu || !a->plat) return;
     w = platform_width(a->plat);
     h = platform_height(a->plat);
@@ -1027,9 +1036,18 @@ static void app_render_phase(App *a)
     total = pv_build_overlay(&a->view, 1.0, atlas_res(a->atlas), w, h,
                              a->selected >= 0 ? a->sel_x : -1,
                              a->selected >= 0 ? a->sel_y : -1,
-                             verts, 16384, &grid_n);
+                             verts, 32768, &grid_n);
+    axis_start = total;
+    axis_n = pv_build_axis_ticks(&a->view, 1.0, w, h,
+                                 a->exp.xmin, a->exp.xmax,
+                                 a->exp.ymin, a->exp.ymax,
+                                 verts + total * 6, 32768 - total);
+    total += axis_n;
     if (grid_n > 0) gpu_draw_lines(a->gpu, verts, grid_n, 1.0f);
-    if (total > grid_n) gpu_draw_lines(a->gpu, verts + grid_n * 6, total - grid_n, 2.0f);
+    if (axis_start > grid_n)
+        gpu_draw_lines(a->gpu, verts + grid_n * 6, axis_start - grid_n, 2.0f);
+    if (axis_n > 0)
+        gpu_draw_lines(a->gpu, verts + axis_start * 6, axis_n, 1.0f);
 }
 
 App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
@@ -1197,6 +1215,7 @@ void app_destroy(App *a)
     if (a->plat) platform_destroy(a->plat);
     free(a->gpu_cells);
     free(a->gpu_chans);
+    free(a->overlay);
     free(a);
 }
 

@@ -2,6 +2,7 @@
 #include "phase_view.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 void pv_init(PhaseView *v)
@@ -289,4 +290,114 @@ int pv_build_overlay(const PhaseView *v, double range, int res, int w, int h,
 
     if (grid_verts) *grid_verts = grid_n;
     return o.n;
+}
+/* ---- axis ticks + tiny vector digits --------------------------------- */
+/* A function rather than pointer-to-arrays keeps C99 simple. */
+static const char *glyph_row(char ch, int row)
+{
+    static const char *g[][7] = {
+        { "01110","10001","10011","10101","11001","10001","01110" }, /* 0 */
+        { "00100","01100","00100","00100","00100","00100","01110" }, /* 1 */
+        { "01110","10001","00001","00010","00100","01000","11111" }, /* 2 */
+        { "11110","00001","00001","01110","00001","00001","11110" }, /* 3 */
+        { "00010","00110","01010","10010","11111","00010","00010" }, /* 4 */
+        { "11111","10000","11110","00001","00001","10001","01110" }, /* 5 */
+        { "00110","01000","10000","11110","10001","10001","01110" }, /* 6 */
+        { "11111","00001","00010","00100","01000","01000","01000" }, /* 7 */
+        { "01110","10001","10001","01110","10001","10001","01110" }, /* 8 */
+        { "01110","10001","10001","01111","00001","00010","01100" }, /* 9 */
+        { "00000","00000","00000","00000","00000","00110","00110" }, /* . */
+        { "00000","00000","00000","11111","00000","00000","00000" }, /* - */
+        { "00000","00000","01110","10001","11111","10000","01110" }, /* e */
+        { "00000","00100","00100","11111","00100","00100","00000" }  /* + */
+    };
+    int idx = -1;
+    if (ch >= '0' && ch <= '9') idx = ch - '0';
+    else if (ch == '.') idx = 10;
+    else if (ch == '-') idx = 11;
+    else if (ch == 'e' || ch == 'E') idx = 12;
+    else if (ch == '+') idx = 13;
+    if (idx < 0 || row < 0 || row > 6) return NULL;
+    return g[idx][row];
+}
+
+static void push_line(float *verts, int maxv, int *n, double x0, double y0,
+                      double x1, double y1, double r, double g, double b, double a)
+{
+    if (*n + 2 > maxv) return;
+    verts[*n * 6 + 0] = (float)x0; verts[*n * 6 + 1] = (float)y0;
+    verts[*n * 6 + 2] = (float)r; verts[*n * 6 + 3] = (float)g;
+    verts[*n * 6 + 4] = (float)b; verts[*n * 6 + 5] = (float)a;
+    (*n)++;
+    verts[*n * 6 + 0] = (float)x1; verts[*n * 6 + 1] = (float)y1;
+    verts[*n * 6 + 2] = (float)r; verts[*n * 6 + 3] = (float)g;
+    verts[*n * 6 + 4] = (float)b; verts[*n * 6 + 5] = (float)a;
+    (*n)++;
+}
+
+static double px_to_ndc_x(int px, int w) { return -1.0 + 2.0 * (double)px / (double)w; }
+static double px_to_ndc_y(int py, int h) { return 1.0 - 2.0 * (double)py / (double)h; }
+
+static void draw_text(float *verts, int maxv, int *n, const char *text,
+                      int x, int y, int pixel, int w, int h)
+{
+    int i, row, col;
+    double p;
+    if (!text || pixel < 1) return;
+    p = (double)pixel;
+    for (i = 0; text[i]; ++i) {
+        for (row = 0; row < 7; ++row) {
+            const char *bits = glyph_row(text[i], row);
+            if (!bits) continue;
+            for (col = 0; col < 5; ++col) {
+                double x0, y0, x1, y1;
+                if (bits[col] != '1') continue;
+                x0 = px_to_ndc_x(x + (int)(i * 6 * p + col * p), w);
+                y0 = px_to_ndc_y(y + (int)(row * p), h);
+                x1 = px_to_ndc_x(x + (int)(i * 6 * p + (col + 1) * p), w);
+                y1 = px_to_ndc_y(y + (int)((row + 1) * p), h);
+                push_line(verts, maxv, n, x0, y0, x1, y0, 0.92, 0.92, 0.94, 1.0);
+                push_line(verts, maxv, n, x1, y0, x1, y1, 0.78, 0.80, 0.84, 1.0);
+                push_line(verts, maxv, n, x1, y1, x0, y1, 0.78, 0.80, 0.84, 1.0);
+                push_line(verts, maxv, n, x0, y1, x0, y0, 0.78, 0.80, 0.84, 1.0);
+            }
+        }
+    }
+}
+
+int pv_build_axis_ticks(const PhaseView *v, double range, int w, int h,
+                        double xmin, double xmax, double ymin, double ymax,
+                        float *verts, int maxv)
+{
+    const double fracs[3] = { 0.15, 0.5, 0.85 };
+    int n = 0, i;
+    int pixel = h / 300;
+    if (pixel < 1) pixel = 1;
+    if (!v || !verts || maxv <= 0 || w <= 0 || h <= 0) return 0;
+    for (i = 0; i < 3; ++i) {
+        double wx, wy;
+        int sx = (int)(fracs[i] * (double)w);
+        int sy = (int)(fracs[i] * (double)h);
+        char buf[32];
+        pv_screen_to_world(v, range, w, h, sx, h - 1, &wx, &wy);
+        if (wx + 0.5 >= 0.0 && wx + 0.5 <= 1.0) {
+            double val = xmin + (wx + 0.5) * (xmax - xmin);
+            int tx;
+            snprintf(buf, sizeof(buf), "%.3g", val);
+            push_line(verts, maxv, &n, px_to_ndc_x(sx, w), px_to_ndc_y(h - 2, h),
+                      px_to_ndc_x(sx, w), px_to_ndc_y(h - 8, h), 0.7, 0.7, 0.7, 1.0);
+            tx = sx - (int)(strlen(buf) * 6 * pixel / 2);
+            if (tx < 0) tx = 0;
+            draw_text(verts, maxv, &n, buf, tx, h - 34, pixel, w, h);
+        }
+        pv_screen_to_world(v, range, w, h, 1, sy, &wx, &wy);
+        if (wy + 0.5 >= 0.0 && wy + 0.5 <= 1.0) {
+            double val = ymin + (wy + 0.5) * (ymax - ymin);
+            snprintf(buf, sizeof(buf), "%.3g", val);
+            push_line(verts, maxv, &n, px_to_ndc_x(1, w), px_to_ndc_y(sy, h),
+                      px_to_ndc_x(7, w), px_to_ndc_y(sy, h), 0.7, 0.7, 0.7, 1.0);
+            draw_text(verts, maxv, &n, buf, 14, sy - 7 * pixel / 2, pixel, w, h);
+        }
+    }
+    return n;
 }
