@@ -24,7 +24,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.23.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.24.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -221,6 +221,19 @@ FTLE 在 atlas reset 后缓存，参数/轴变化才重算；播放时不会每�
 
 ![FTLE 面板](docs/shot-ftle-panel.png)
 
+## 逃逸时间 / escape
+
+View 下拉的 **escape** 对每个 cell：
+
+- 从初始 state 起逐步积分，最多 `steps` 步；
+- 任一分量 `|state| > 10` 或 NaN 时停止；
+- 颜色表示逃逸步数（未逃逸 = 最大步数）。
+
+适合 Hénon / Standard map 这类可逃逸 map；Logistic/双摆没有该阈值逃逸，显示为常数。
+escape 结果和 FTLE 一样缓存，reset 后重算。
+
+![escape](docs/shot-escape.png)
+
 ## 地图刻度
 
 地图窗口在底边/左边绘制 min/mid/max 数字刻度与短 tick；顶部左右直接画
@@ -240,7 +253,7 @@ FTLE 在 atlas reset 后缓存，参数/轴变化才重算；播放时不会每�
 
 ![模型面板](docs/shot-panel.png)
 
-**View**：Model、Color by、View（raw/gradient/range/variance/**ftle**）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV；PNG 旁边的 `1x/2x/4x` 控制最近邻放大，CSV 在 ftle 模式多一列 `ftle`。地图边缘有数字刻度（min/mid/max），顶部直接画 X/Y 轴名；范围在面板读数里。
+**View**：Model、Color by、View（raw/gradient/range/variance/ftle/**escape**）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV；PNG 旁边的 `1x/2x/4x` 控制最近邻放大，CSV 在 ftle 模式多一列 `ftle`。地图边缘有数字刻度（min/mid/max），顶部直接画 X/Y 轴名；范围在面板读数里。
 
 **Parameters**：X/Y 轴、范围、Res、dt、Steps/frame、模型参数、Apply parameters。
 面板高度按屏幕自适应（1080p 下 620 客户区），双摆 10 个参数能完整显示。
@@ -331,13 +344,13 @@ src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 124 项；含 GPU 的 160 项
+src/selftest.c      CPU 127 项；含 GPU 的 163 项
 ```
 
 ## 验证
 
-- `/selftest`：**124/124**
-- `/gpu-selftest`：**160/160**
+- `/selftest`：**127/127**
+- `/gpu-selftest`：**163/163**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
@@ -348,10 +361,10 @@ src/selftest.c      CPU 124 项；含 GPU 的 160 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出默认在 exe 旁 exports/，可 Save As。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出、Standard map 已完成；还缺盆地/逃逸时间；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出、Standard map、escape 已完成；还缺盆地/更细分析；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.23.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.24.0.zip`

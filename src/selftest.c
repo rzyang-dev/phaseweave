@@ -565,6 +565,28 @@ static void test_ftle(void)
     atlas_destroy(a);
 }
 
+static void test_escape(void)
+{
+    Experiment e;
+    Atlas *a;
+    char err[512];
+    int i, escaped = 0;
+    printf("-- escape time\n");
+    exp_init(&e, &HENON_MODEL);
+    e.res = 16;
+    e.max_steps = 16;
+    a = atlas_create(&e, 16, err, sizeof(err));
+    check(a != NULL, "escape atlas creation");
+    if (!a) return;
+    check(atlas_compute_escape(a, &e) == 1, "escape time compute");
+    for (i = 0; i < 16 * 16; ++i) {
+        float v = atlas_analysis_data(a)[i];
+        if (v == v && v < 16.0f) escaped++;
+    }
+    check(escaped > 0, "escape time finds escaping cells");
+    atlas_destroy(a);
+}
+
 static void test_fortran(void)
 {
     DpConfig cfg = test_cfg(24);
@@ -1155,6 +1177,7 @@ int dp_selftest(int with_gpu)
     test_expressions_and_custom();
     test_session();
     test_ftle();
+    test_escape();
     test_fortran();
     test_timing();
     test_lua();

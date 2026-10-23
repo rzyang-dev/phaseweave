@@ -18,6 +18,7 @@ struct Atlas {
     float *channels;    /* per cell: model channels */
     float *analysis;    /* per cell: FTLE / analysis scalar */
     int analysis_valid;
+    int analysis_mode; /* 1 FTLE, 2 escape */
     double post_min, post_max;
     unsigned char *rgba;
     ThreadPool *pool;
@@ -120,8 +121,10 @@ void atlas_reset(Atlas *a, const Experiment *e)
         }
     }
     a->analysis_valid = 0;
+    a->analysis_mode = 0;
     atlas_step(a, e, 0);
     if (e->post == 4) atlas_compute_ftle(a, e);
+    else if (e->post == 5) atlas_compute_escape(a, e);
 }
 
 static void atlas_band(void *user, int y0, int y1)
@@ -161,7 +164,7 @@ void atlas_step(Atlas *a, const Experiment *e, int steps)
 
 static double post_value(Atlas *a, int ch, int cyclic, int x, int y, int post)
 {
-    if (post == 4) {
+    if (post == 4 || post == 5) {
         int cx = x < 0 ? 0 : (x >= a->res ? a->res - 1 : x);
         int cy = y < 0 ? 0 : (y >= a->res ? a->res - 1 : y);
         return a->analysis[(size_t)cy * a->res + cx];
@@ -225,7 +228,8 @@ void atlas_colorize(Atlas *a, const Experiment *e, const unsigned char *lut)
     low = ci.min; high = ci.max;
     span = high - low;
     if (fabs(span) < 1e-9) span = 1.0;
-    if (e->post == 4 && !a->analysis_valid) atlas_compute_ftle(a, e);
+    if (e->post == 4 && (!a->analysis_valid || a->analysis_mode != 1)) atlas_compute_ftle(a, e);
+    if (e->post == 5 && (!a->analysis_valid || a->analysis_mode != 2)) atlas_compute_escape(a, e);
 
     if (e->post != 0) {
         for (y = 0; y < a->res; ++y) {
@@ -303,6 +307,7 @@ int atlas_compute_ftle(Atlas *a, const Experiment *e)
     double dt;
     if (!a || !e || !e->mdl || !a->analysis) return 0;
     a->analysis_valid = 1;
+    a->analysis_mode = 1;
     m = e->mdl;
     steps = e->max_steps > 0 ? e->max_steps : 1;
     dim = m->state_dim > 0 ? m->state_dim : 1;
@@ -336,6 +341,40 @@ int atlas_compute_ftle(Atlas *a, const Experiment *e)
             if (v < -20.0) v = -20.0;
             if (v > 20.0) v = 20.0;
             a->analysis[(size_t)(y * a->res + x)] = (float)v;
+        }
+    }
+    return 1;
+}
+int atlas_compute_escape(Atlas *a, const Experiment *e)
+{
+    const Model *m;
+    int x, y, steps, dim, k;
+    if (!a || !e || !e->mdl || !a->analysis) return 0;
+    a->analysis_valid = 1;
+    a->analysis_mode = 2;
+    m = e->mdl;
+    steps = e->max_steps > 0 ? e->max_steps : 1;
+    dim = m->state_dim > 0 ? m->state_dim : 1;
+    if (dim > MODEL_MAX_STATE) dim = MODEL_MAX_STATE;
+    for (y = 0; y < a->res; ++y) {
+        for (x = 0; x < a->res; ++x) {
+            float *c = a->cells_data + (size_t)(y * a->res + x) * (4u + MODEL_MAX_PARAMS);
+            double state[MODEL_MAX_STATE], vals[MODEL_MAX_PARAMS];
+            int used = steps, s;
+            for (k = 0; k < MODEL_MAX_STATE; ++k) state[k] = c[k];
+            for (k = 0; k < MODEL_MAX_PARAMS; ++k) vals[k] = c[MODEL_MAX_STATE + k];
+            for (s = 1; s <= steps; ++s) {
+                int escaped = 0;
+                m->step(m, state, vals, e->dt, 1);
+                for (k = 0; k < dim; ++k) {
+                    if (!(state[k] == state[k]) || fabs(state[k]) > 10.0) {
+                        escaped = 1;
+                        break;
+                    }
+                }
+                if (escaped) { used = s; break; }
+            }
+            a->analysis[(size_t)(y * a->res + x)] = (float)used;
         }
     }
     return 1;

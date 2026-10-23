@@ -23,6 +23,7 @@ float *atlas_channel_data(Atlas *a);
 int    atlas_cell_floats(void);
 const float *atlas_analysis_data(Atlas *a);
 int    atlas_compute_ftle(Atlas *a, const Experiment *e);
+int    atlas_compute_escape(Atlas *a, const Experiment *e);
 void   atlas_post_range(Atlas *a, double *lo, double *hi);
 void   atlas_read_cell(const Atlas *a, int index, float state[MODEL_MAX_STATE], float vals[MODEL_MAX_PARAMS], float ch[MODEL_MAX_CHANNELS]);
 

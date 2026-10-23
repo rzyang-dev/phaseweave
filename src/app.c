@@ -626,6 +626,7 @@ static int app_export_csv(App *a)
         if (a->exp.mdl->state_names[i]) fprintf(f, ",state_%s", a->exp.mdl->state_names[i]);
     for (i = 0; i < a->exp.nch; ++i) fprintf(f, ",ch_%s", exp_channel_name(&a->exp, i));
     if (a->exp.post == 4) fprintf(f, ",ftle");
+    if (a->exp.post == 5) fprintf(f, ",escape");
     fprintf(f, "\n");
     for (y = 0; y < atlas_res(a->atlas); ++y) {
         for (x = 0; x < atlas_res(a->atlas); ++x) {
@@ -639,7 +640,7 @@ static int app_export_csv(App *a)
             for (i = 0; i < a->exp.mdl->state_dim && i < MODEL_MAX_STATE; ++i)
                 if (a->exp.mdl->state_names[i]) fprintf(f, ",%.9g", (double)st[i]);
             for (i = 0; i < a->exp.nch; ++i) fprintf(f, ",%.9g", (double)ch[i]);
-            if (a->exp.post == 4 && atlas_analysis_data(a->atlas))
+            if ((a->exp.post == 4 || a->exp.post == 5) && atlas_analysis_data(a->atlas))
                 fprintf(f, ",%.9g", (double)atlas_analysis_data(a->atlas)[idx]);
             fprintf(f, "\n");
         }
@@ -786,6 +787,7 @@ static int app_load_session(App *a, const char *path)
     else if (strcmp(s.post, "range") == 0) a->exp.post = 2;
     else if (strcmp(s.post, "variance") == 0) a->exp.post = 3;
     else if (strcmp(s.post, "ftle") == 0) a->exp.post = 4;
+    else if (strcmp(s.post, "escape") == 0) a->exp.post = 5;
     a->exp.export_scale = dp_clampi(s.export_scale, 1, 4);
     a->exp.export_overlay = s.export_overlay ? 1 : 0;
     if (s.palette[0]) strncpy(a->exp.palette, s.palette, sizeof(a->exp.palette) - 1);
@@ -978,6 +980,7 @@ static int app_do_action(App *a, const char *name, const char *value)
         else if (strcmp(value, "range") == 0) a->exp.post = 2;
         else if (strcmp(value, "variance") == 0) a->exp.post = 3;
         else if (strcmp(value, "ftle") == 0) a->exp.post = 4;
+        else if (strcmp(value, "escape") == 0) a->exp.post = 5;
         else { app_set_last(a, "unknown post"); return 0; }
         app_colorize(a);
         app_set_last(a, value);
@@ -1189,6 +1192,7 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
         else if (a->exp.post == 2) post = "range";
         else if (a->exp.post == 3) post = "variance";
         else if (a->exp.post == 4) post = "ftle";
+        else if (a->exp.post == 5) post = "escape";
         append_list(out, outsz, "%s %s %s", exp_channel_name(&a->exp, a->exp.channel), post, a->exp.palette);
     } else if (strcmp(what, "integration") == 0) {
         append_list(out, outsz, "%d %.9g %d", a->exp.res, a->exp.dt, a->exp.max_steps);
@@ -1361,6 +1365,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
         else if (strcmp(opt->post, "range") == 0) a->exp.post = 2;
         else if (strcmp(opt->post, "variance") == 0) a->exp.post = 3;
         else if (strcmp(opt->post, "ftle") == 0) a->exp.post = 4;
+        else if (strcmp(opt->post, "escape") == 0) a->exp.post = 5;
     }
     pv_init(&a->view);
     dp_phase_lut(a->lut);

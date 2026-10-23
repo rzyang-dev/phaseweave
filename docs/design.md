@@ -212,7 +212,11 @@ PNG/CSV 使用原生 Save As（默认 exe 旁 exports/）；PNG 支持 1x/2x/4x 
 `PNG ov` 用同一 overlay 顶点在 CPU 上栅格化 Grid/选中圈/轴刻度（<192px 跳过文字）；
 CSV 在 ftle 模式追加 ftle 列；`export_scale/export_overlay` 存入 .dps。
 
-## 10c. FTLE 分析
+## 10c. 逃逸时间
+
+escape：每 cell 逐步积分，|state|>10/NaN 记录步数；适合 Hénon/Standard；缓存，reset 重算。
+
+## 10d. FTLE 分析
 
 View=ftle：每个 cell 以初始 state 为 base，扰动 state[0]，双轨积分 steps，
 存 `log(|delta|/eps)/steps`；`analysis` 数组在 atlas reset 后缓存，参数/轴变化才重算。
@@ -256,7 +260,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 26 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.9 MB，exe 约 437 KB。
+zip 约 3.9 MB，exe 约 439 KB。
 
 ## 13. 物理与数值边界
 
