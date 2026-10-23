@@ -32,6 +32,7 @@ int session_save(const char *path, const Experiment *e, const PhaseView *v,
     else if (e->post == 5) post = "escape";
     else if (e->post == 6) post = "final";
     else if (e->post == 7) post = "basin";
+    else if (e->post == 8) post = "cluster";
     f = fopen(path, "wb");
     if (!f) { if (err) snprintf(err, errsz, "cannot create %s", path); return 0; }
     fprintf(f, "DPEXPERIMENT 1\n");
@@ -49,8 +50,8 @@ int session_save(const char *path, const Experiment *e, const PhaseView *v,
     fprintf(f, "backend=%s\n", backend_gpu ? "gpu" : "cpu");
     fprintf(f, "view_cx=%.17g\nview_cy=%.17g\nview_zoom=%.17g\n",
             v->cx, v->cy, v->zoom);
-    fprintf(f, "selected=%d\nsel_x=%d\nsel_y=%d\nexport_scale=%d\nexport_overlay=%d\nescape_radius=%.17g\n",
-            selected ? 1 : 0, sel_x, sel_y, e->export_scale, e->export_overlay, e->escape_radius);
+    fprintf(f, "selected=%d\nsel_x=%d\nsel_y=%d\nexport_scale=%d\nexport_overlay=%d\nescape_radius=%.17g\ncluster_k=%d\n",
+            selected ? 1 : 0, sel_x, sel_y, e->export_scale, e->export_overlay, e->escape_radius, e->cluster_k);
     for (i = 0; i < e->np; ++i)
         fprintf(f, "param.%s=%.17g\n", e->p[i].name, e->p[i].value);
     fclose(f);
@@ -65,7 +66,7 @@ int session_load(const char *path, SessionData *s, char *err, size_t errsz)
     if (err && errsz) err[0] = 0;
     if (!path || !s) return 0;
     memset(s, 0, sizeof(*s));
-    s->res = 64; s->dt = 0.01; s->steps = 8; s->export_scale = 1; s->export_overlay = 1; s->escape_radius = 10.0;
+    s->res = 64; s->dt = 0.01; s->steps = 8; s->export_scale = 1; s->export_overlay = 1; s->escape_radius = 10.0; s->cluster_k = 4;
     s->view_zoom = 1.0;
     strcpy(s->post, "raw");
     strcpy(s->palette, "phase");
@@ -107,6 +108,7 @@ int session_load(const char *path, SessionData *s, char *err, size_t errsz)
         else if (strcmp(k, "export_scale") == 0) s->export_scale = atoi(v);
         else if (strcmp(k, "export_overlay") == 0) s->export_overlay = boolv(v);
         else if (strcmp(k, "escape_radius") == 0) s->escape_radius = atof(v);
+        else if (strcmp(k, "cluster_k") == 0) s->cluster_k = atoi(v);
         else if (strncmp(k, "param.", 6) == 0 && s->nparams < MODEL_MAX_PARAMS) {
             strncpy(s->params[s->nparams].name, k + 6, sizeof(s->params[s->nparams].name) - 1);
             s->params[s->nparams].value = atof(v);
@@ -124,6 +126,7 @@ int session_load(const char *path, SessionData *s, char *err, size_t errsz)
     if (s->export_scale != 2 && s->export_scale != 4) s->export_scale = 1;
     s->export_overlay = s->export_overlay ? 1 : 0;
     if (!(s->escape_radius > 0.0)) s->escape_radius = 10.0;
+    if (s->cluster_k < 2 || s->cluster_k > 16) s->cluster_k = 4;
     if (s->sel_x < 0 || s->sel_x >= s->res || s->sel_y < 0 || s->sel_y >= s->res)
         s->selected = 0;
     return 1;

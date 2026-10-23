@@ -53,6 +53,7 @@ typedef struct {
     int export_scale;   /* PNG nearest-neighbour scale: 1/2/4 */
     int export_overlay; /* draw grid/ticks/selection into PNG */
     double escape_radius; /* escape post threshold */
+    int cluster_k;       /* basin k-means cluster count */
 
     int grid, periodic, circle;
     int selected;

@@ -519,7 +519,7 @@ static void test_session(void)
     e.channel = 2;
     e.post = 2;
     strcpy(e.palette, "ember");
-    e.grid = 1; e.periodic = 1; e.circle = 0; e.export_scale = 2; e.export_overlay = 0; e.escape_radius = 7.5;
+    e.grid = 1; e.periodic = 1; e.circle = 0; e.export_scale = 2; e.export_overlay = 0; e.escape_radius = 7.5; e.cluster_k = 6;
     pv_init(&v); v.cx = 0.1; v.cy = -0.2; v.zoom = 2.0;
     GetTempPathA(sizeof(dir), dir);
     snprintf(path, sizeof(path), "%sdp-session-test.dps", dir);
@@ -538,7 +538,7 @@ static void test_session(void)
           "session view/toggles roundtrip");
     check(s.selected == 1 && s.sel_x == 12 && s.sel_y == 13,
           "session selected cell roundtrip");
-    check(s.export_scale == 2 && s.export_overlay == 0 && fabs(s.escape_radius - 7.5) < 1e-12,
+    check(s.export_scale == 2 && s.export_overlay == 0 && fabs(s.escape_radius - 7.5) < 1e-12 && s.cluster_k == 6,
           "session export scale/overlay/escape roundtrip");
     DeleteFileA(path);
 }
@@ -629,6 +629,30 @@ static void test_basin(void)
     }
     for (i = 0; i < 8; ++i) if (bins[i] > 0) distinct++;
     check(distinct > 1, "basin uses multiple bins");
+    atlas_destroy(a);
+}
+
+static void test_cluster(void)
+{
+    Experiment e;
+    Atlas *a;
+    char err[512];
+    int i, bins[16] = {0}, distinct = 0;
+    printf("-- k-means clusters\n");
+    exp_init(&e, &HENON_MODEL);
+    e.res = 16;
+    e.max_steps = 8;
+    e.cluster_k = 4;
+    a = atlas_create(&e, 16, err, sizeof(err));
+    check(a != NULL, "cluster atlas creation");
+    if (!a) return;
+    check(atlas_compute_cluster(a, &e) == 1, "cluster compute");
+    for (i = 0; i < 16 * 16; ++i) {
+        int b = (int)atlas_analysis_data(a)[i];
+        if (b >= 0 && b < 4) bins[b]++;
+    }
+    for (i = 0; i < 4; ++i) if (bins[i] > 0) distinct++;
+    check(distinct > 1, "cluster finds multiple labels");
     atlas_destroy(a);
 }
 
@@ -1225,6 +1249,7 @@ int dp_selftest(int with_gpu)
     test_escape();
     test_final();
     test_basin();
+    test_cluster();
     test_fortran();
     test_timing();
     test_lua();

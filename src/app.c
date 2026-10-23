@@ -629,6 +629,7 @@ static int app_export_csv(App *a)
     if (a->exp.post == 5) fprintf(f, ",escape");
     if (a->exp.post == 6) fprintf(f, ",final");
     if (a->exp.post == 7) fprintf(f, ",basin");
+    if (a->exp.post == 8) fprintf(f, ",cluster");
     fprintf(f, "\n");
     for (y = 0; y < atlas_res(a->atlas); ++y) {
         for (x = 0; x < atlas_res(a->atlas); ++x) {
@@ -642,7 +643,7 @@ static int app_export_csv(App *a)
             for (i = 0; i < a->exp.mdl->state_dim && i < MODEL_MAX_STATE; ++i)
                 if (a->exp.mdl->state_names[i]) fprintf(f, ",%.9g", (double)st[i]);
             for (i = 0; i < a->exp.nch; ++i) fprintf(f, ",%.9g", (double)ch[i]);
-            if ((a->exp.post >= 4 && a->exp.post <= 7) && atlas_analysis_data(a->atlas))
+            if ((a->exp.post >= 4 && a->exp.post <= 8) && atlas_analysis_data(a->atlas))
                 fprintf(f, ",%.9g", (double)atlas_analysis_data(a->atlas)[idx]);
             fprintf(f, "\n");
         }
@@ -792,9 +793,11 @@ static int app_load_session(App *a, const char *path)
     else if (strcmp(s.post, "escape") == 0) a->exp.post = 5;
     else if (strcmp(s.post, "final") == 0) a->exp.post = 6;
     else if (strcmp(s.post, "basin") == 0) a->exp.post = 7;
+    else if (strcmp(s.post, "cluster") == 0) a->exp.post = 8;
     a->exp.export_scale = dp_clampi(s.export_scale, 1, 4);
     a->exp.export_overlay = s.export_overlay ? 1 : 0;
     a->exp.escape_radius = s.escape_radius > 0.0 ? s.escape_radius : 10.0;
+    a->exp.cluster_k = (s.cluster_k >= 2 && s.cluster_k <= 16) ? s.cluster_k : 4;
     if (s.palette[0]) strncpy(a->exp.palette, s.palette, sizeof(a->exp.palette) - 1);
     if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, a->exp.palette, NULL, 0);
     a->selected = -1;
@@ -969,6 +972,15 @@ static int app_do_action(App *a, const char *name, const char *value)
         app_apply_experiment(a);
         return 1;
     }
+    if (strcmp(name, "cluster_set") == 0 && value) {
+        int k = atoi(value);
+        if (k < 2) k = 2;
+        if (k > 16) k = 16;
+        a->exp.cluster_k = k;
+        a->exp.post = 8;
+        app_apply_experiment(a);
+        return 1;
+    }
     if (strcmp(name, "steps_set") == 0 && value) {
         int s = atoi(value);
         if (s < 1) s = 1;
@@ -996,6 +1008,7 @@ static int app_do_action(App *a, const char *name, const char *value)
         else if (strcmp(value, "escape") == 0) a->exp.post = 5;
         else if (strcmp(value, "final") == 0) a->exp.post = 6;
         else if (strcmp(value, "basin") == 0) a->exp.post = 7;
+        else if (strcmp(value, "cluster") == 0) a->exp.post = 8;
         else { app_set_last(a, "unknown post"); return 0; }
         app_colorize(a);
         app_set_last(a, value);
@@ -1210,10 +1223,11 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
         else if (a->exp.post == 5) post = "escape";
         else if (a->exp.post == 6) post = "final";
         else if (a->exp.post == 7) post = "basin";
+        else if (a->exp.post == 8) post = "cluster";
         append_list(out, outsz, "%s %s %s", exp_channel_name(&a->exp, a->exp.channel), post, a->exp.palette);
     } else if (strcmp(what, "integration") == 0) {
-        append_list(out, outsz, "%d %.9g %d %.9g", a->exp.res, a->exp.dt,
-                    a->exp.max_steps, a->exp.escape_radius);
+        append_list(out, outsz, "%d %.9g %d %.9g %d", a->exp.res, a->exp.dt,
+                    a->exp.max_steps, a->exp.escape_radius, a->exp.cluster_k);
     } else if (strcmp(what, "models") == 0) {
         for (i = 0; i < model_count(); ++i) {
             const Model *m = model_at(i);
@@ -1386,6 +1400,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
         else if (strcmp(opt->post, "escape") == 0) a->exp.post = 5;
         else if (strcmp(opt->post, "final") == 0) a->exp.post = 6;
         else if (strcmp(opt->post, "basin") == 0) a->exp.post = 7;
+        else if (strcmp(opt->post, "cluster") == 0) a->exp.post = 8;
     }
     pv_init(&a->view);
     dp_phase_lut(a->lut);

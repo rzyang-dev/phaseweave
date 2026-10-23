@@ -212,7 +212,11 @@ PNG/CSV 使用原生 Save As（默认 exe 旁 exports/）；PNG 支持 1x/2x/4x 
 `PNG ov` 用同一 overlay 顶点在 CPU 上栅格化 Grid/选中圈/轴刻度（<192px 跳过文字）；
 CSV 在 ftle 模式追加 ftle 列；`export_scale/export_overlay` 存入 .dps。
 
-## 10c. basin 分箱
+## 10c. k-means cluster
+
+cluster：最终状态 k-means（K 2..16，12 次迭代），离散 LUT；不是收敛检测。
+
+## 10d. basin 分箱
 
 basin：最终状态 8 bins（DP theta1、Logistic x、其他 atan2），离散 LUT。
 
@@ -270,7 +274,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 26 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.9 MB，exe 约 442 KB。
+zip 约 3.9 MB，exe 约 446 KB。
 
 ## 13. 物理与数值边界
 

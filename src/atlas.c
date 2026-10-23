@@ -127,6 +127,7 @@ void atlas_reset(Atlas *a, const Experiment *e)
     else if (e->post == 5) atlas_compute_escape(a, e);
     else if (e->post == 6) atlas_compute_final(a, e);
     else if (e->post == 7) atlas_compute_basin(a, e);
+    else if (e->post == 8) atlas_compute_cluster(a, e);
 }
 
 static void atlas_band(void *user, int y0, int y1)
@@ -166,7 +167,7 @@ void atlas_step(Atlas *a, const Experiment *e, int steps)
 
 static double post_value(Atlas *a, int ch, int cyclic, int x, int y, int post)
 {
-    if (post == 4 || post == 5 || post == 6 || post == 7) {
+    if (post >= 4 && post <= 8) {
         int cx = x < 0 ? 0 : (x >= a->res ? a->res - 1 : x);
         int cy = y < 0 ? 0 : (y >= a->res ? a->res - 1 : y);
         return a->analysis[(size_t)cy * a->res + cx];
@@ -234,8 +235,15 @@ void atlas_colorize(Atlas *a, const Experiment *e, const unsigned char *lut)
     if (e->post == 5 && (!a->analysis_valid || a->analysis_mode != 2)) atlas_compute_escape(a, e);
     if (e->post == 6 && (!a->analysis_valid || a->analysis_mode != 3)) atlas_compute_final(a, e);
     if (e->post == 7 && (!a->analysis_valid || a->analysis_mode != 4)) atlas_compute_basin(a, e);
+    if (e->post == 8 && (!a->analysis_valid || a->analysis_mode != 5)) atlas_compute_cluster(a, e);
 
-    if (e->post == 7) {
+    if (e->post == 8) {
+        int kk = e->cluster_k;
+        if (kk < 2) kk = 2;
+        if (kk > 16) kk = 16;
+        pmin = 0.0; pmax = (double)(kk - 1);
+        a->post_min = 0.0; a->post_max = (double)(kk - 1);
+    } else if (e->post == 7) {
         pmin = 0.0; pmax = 7.0;
         a->post_min = 0.0; a->post_max = 7.0;
     } else if (e->post != 0) {
@@ -263,10 +271,15 @@ void atlas_colorize(Atlas *a, const Experiment *e, const unsigned char *lut)
             } else {
                 double v = post_value(a, ch, ci.cyclic, x, y, e->post);
                 if (e->post == 7) u = (v + 0.5) / 8.0;
-                else u = (v - pmin) / (pmax - pmin);
+                else if (e->post == 8) {
+                    int kk = e->cluster_k;
+                    if (kk < 2) kk = 2;
+                    if (kk > 16) kk = 16;
+                    u = (v + 0.5) / (double)kk;
+                } else u = (v - pmin) / (pmax - pmin);
             }
             if (!(u == u)) u = 0.0;
-            if (ci.cyclic && e->post != 7) u = u - floor(u);
+            if (ci.cyclic && e->post != 7 && e->post != 8) u = u - floor(u);
             else if (u < 0.0) u = 0.0;
             else if (u > 1.0) u = 1.0;
             {
@@ -450,5 +463,80 @@ int atlas_compute_basin(Atlas *a, const Experiment *e)
             a->analysis[(size_t)(y * a->res + x)] = (float)bin;
         }
     }
+    return 1;
+}
+int atlas_compute_cluster(Atlas *a, const Experiment *e)
+{
+    const Model *m;
+    int n, k, i, x, y, it, c, steps;
+    double *pts, *cx, *cy;
+    int *labels, *counts;
+    if (!a || !e || !e->mdl || !a->analysis) return 0;
+    n = a->res * a->res;
+    k = e->cluster_k;
+    if (k < 2) k = 2;
+    if (k > 16) k = 16;
+    if (k > n) k = n;
+    m = e->mdl;
+    steps = e->max_steps > 0 ? e->max_steps : 1;
+    pts = (double *)malloc((size_t)n * 2u * sizeof(double));
+    cx = (double *)calloc((size_t)k, sizeof(double));
+    cy = (double *)calloc((size_t)k, sizeof(double));
+    labels = (int *)calloc((size_t)n, sizeof(int));
+    counts = (int *)calloc((size_t)k, sizeof(int));
+    if (!pts || !cx || !cy || !labels || !counts) {
+        free(pts); free(cx); free(cy); free(labels); free(counts);
+        return 0;
+    }
+    for (y = 0; y < a->res; ++y) {
+        for (x = 0; x < a->res; ++x) {
+            int idx = y * a->res + x;
+            float *cell = a->cells_data + (size_t)idx * (4u + MODEL_MAX_PARAMS);
+            double state[MODEL_MAX_STATE], vals[MODEL_MAX_PARAMS];
+            int j;
+            for (j = 0; j < MODEL_MAX_STATE; ++j) state[j] = cell[j];
+            for (j = 0; j < MODEL_MAX_PARAMS; ++j) vals[j] = cell[MODEL_MAX_STATE + j];
+            m->step(m, state, vals, e->dt, steps);
+            if (strcmp(m->id, "double_pendulum") == 0) {
+                dp_normalize_angle(&state[0]);
+                dp_normalize_angle(&state[1]);
+            }
+            pts[(size_t)idx * 2u + 0] = state[0];
+            pts[(size_t)idx * 2u + 1] = (m->state_dim > 1) ? state[1] : 0.0;
+        }
+    }
+    for (c = 0; c < k; ++c) {
+        int idx = (int)((long long)c * n / k);
+        if (idx >= n) idx = n - 1;
+        cx[c] = pts[(size_t)idx * 2u + 0];
+        cy[c] = pts[(size_t)idx * 2u + 1];
+    }
+    for (it = 0; it < 12; ++it) {
+        for (c = 0; c < k; ++c) { counts[c] = 0; cx[c] = 0.0; cy[c] = 0.0; }
+        for (i = 0; i < n; ++i) {
+            int best = 0;
+            double bd = 1e300;
+            for (c = 0; c < k; ++c) {
+                double dx = pts[(size_t)i * 2u + 0] - cx[c];
+                double dy = pts[(size_t)i * 2u + 1] - cy[c];
+                double d = dx * dx + dy * dy;
+                if (d < bd) { bd = d; best = c; }
+            }
+            labels[i] = best;
+            counts[best]++;
+            cx[best] += pts[(size_t)i * 2u + 0];
+            cy[best] += pts[(size_t)i * 2u + 1];
+        }
+        for (c = 0; c < k; ++c) {
+            if (counts[c] > 0) {
+                cx[c] /= (double)counts[c];
+                cy[c] /= (double)counts[c];
+            }
+        }
+    }
+    for (i = 0; i < n; ++i) a->analysis[(size_t)i] = (float)labels[i];
+    a->analysis_valid = 1;
+    a->analysis_mode = 5;
+    free(pts); free(cx); free(cy); free(labels); free(counts);
     return 1;
 }
