@@ -10,7 +10,7 @@
 - 解压即用的文件夹 + zip，Tcl/Tk 动态链接。
 
 当前是 M3：三个模型、通用 Model 接口、模型下拉、动态 schema、82 项自检。
-Lua 表达式模型、GPU compute、专用 map inspector 仍在后面。
+Lua 表达式模型、CPU/GLSL、GPU compute、Inspect 和实验保存已完成；ODE/轴刻度/全模型 GPU 仍在后面。
 
 ## 2. 数据流
 
@@ -237,7 +237,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 24 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.7 MB，exe 约 802 KB。
+zip 约 3.9 MB，exe 约 805 KB。
 
 ## 13. 物理与数值边界
 
@@ -249,7 +249,7 @@ zip 约 3.7 MB，exe 约 802 KB。
 
 已知限制：
 
-- 只有三个内置模型，无 Lua 表达式 DSL；
+- 内置模型 + Lua 表达式 map；还没有 ODE 表达式/全模型 GPU；
 - GUI 采样 CPU，GPU 只显示；
 - map 只有面板 Inspect，没有独立窗口 inspector；
 - 无文件选择对话框、实验保存/加载；PNG 只包含 atlas；
@@ -264,6 +264,7 @@ zip 约 3.7 MB，exe 约 802 KB。
 - M5b（已完成）：GLSL 代码生成 + GPU 单格验证；
 - M6（已完成）：GPU compute atlas + CPU 回退（自定义模型）；
 - M7a（已完成）：.dps 实验保存/加载 + 文件对话框 + CLI；
-- 后续：控制流/ODE 表达式、全模型 GPU、地图轴刻度。
+- M7b（部分）：比较/逻辑/三元/if 控制流已进 CPU+GLSL；
+- 后续：ODE 表达式、全模型 GPU、地图轴刻度。
 - M6：GPU compute atlas、FTLE/盆地、Poincaré、切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。

@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (24 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (801,792 bytes)
+OK -> dist/dp-phase/dp-phase.exe (804,864 bytes)
       staged 10.4 MB
-      dist/dp-phase-1.11.0.zip (3.9 MB)
+      dist/dp-phase-1.12.0.zip (3.9 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 801,792 B |
+| exe | 804,864 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -54,10 +54,10 @@ OK -> dist/dp-phase/dp-phase.exe (801,792 bytes)
   [ok]   session load
   [ok]   session axes/ranges roundtrip
   [ok]   session integration roundtrip
-selftest: 107 passed, 0 failed
+selftest: 114 passed, 0 failed
 ```
 
-`/gpu-selftest`：**122/122**（100 CPU + 旧 GPU + 8 项表达式/GPU atlas 回归）。
+`/gpu-selftest`：**129/129**（114 CPU + 旧 GPU + 表达式/GPU atlas 回归）。
 GUI 采样仍是 CPU；GPU 只负责 atlas RGBA 显示和线叠加。
 
 ## 3. 双摆三窗口
@@ -201,7 +201,7 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
   [ok]   GPU custom dispatch
   [ok]   GPU custom state matches CPU
   [ok]   GPU custom channels match CPU
-selftest: 122 passed, 0 failed
+selftest: 129 passed, 0 failed
 ```
 
 测试用单格 10 步 + 8×8 atlas 2 步 Hénon 表达式；单格容差 1e-5，atlas 2 步逐值一致。
@@ -231,14 +231,19 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 
 ![Script 页](shot-panel-script.png)
 
-## 12. 性能
+## 12. 控制流表达式
+
+`expr.c` 新增比较/逻辑/三元/`if(cond,a,b)`。CPU 用数值真值，GLSL 条件使用 bool；
+自定义 `x_abs` 改为 `if(x < 0, -x, x)`，CPU/GPU 单格测试通过。
+
+## 13. 性能
 
 - 双摆 64×64：142–147 fps；
 - Logistic/Hénon 64×64：140+ fps；
 - 64×64 双摆每步约 2 ms（8 线程）；
 - 256×256 CPU 仍可算，但约 16 倍成本，GPU compute 未接 GUI。
 
-## 13. 本次修掉的问题
+## 14. 本次修掉的问题
 
 | 问题 | 根因 | 修复 |
 | --- | --- | --- |
@@ -253,7 +258,7 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 | CSV 列名冲突 | x/y/state/channel 同名 | 加 `x_/y_/state_/ch_` 前缀 |
 | Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/experiment.lua |
 
-## 14. 已知边界
+## 15. 已知边界
 
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
@@ -264,7 +269,7 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
 8. 没有 3D 切片/连续化。
 
-## 15. 复现
+## 16. 复现
 
 ```powershell
 pwsh -File build.ps1

@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.11.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.12.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -110,7 +110,17 @@ GPU 单格结果与 CPU 逐值匹配（双精度 CPU vs float GPU，容差 1e-5�
 
 ![GPU 面板](docs/shot-custom-gpu-panel.png)
 
-当前限制：只支持 2 状态 map、无控制流/ODE；GPU 只对 Lua 自定义模型；
+表达式现在支持：
+
+- 比较：`< <= > >= == !=`；
+- 逻辑：`&& || !`；
+- 三元：`cond ? a : b`；
+- `if(cond, a, b)`。
+
+GLSL 的条件必须是 bool（比较/逻辑结果），CPU 仍接受数值真值。自定义 `x_abs` 通道
+已改为 `if(x < 0, -x, x)`，CPU/GPU 都通过测试。
+
+当前限制：只支持 2 状态 map、无 ODE；GPU 只对 Lua 自定义模型；
 CPU/GPU 长时间混沌轨道会因精度分叉。
 
 ![Lua 表达式模型](docs/shot-custom.png)
@@ -258,19 +268,19 @@ src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 107 项；含 GPU 的 122 项
+src/selftest.c      CPU 114 项；含 GPU 的 129 项
 ```
 
 ## 验证
 
-- `/selftest`：**107/107**
-- `/gpu-selftest`：**122/122**
+- `/selftest`：**114/114**
+- `/gpu-selftest`：**129/129**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
 ## 已知边界 / 下一步
 
-1. Lua 2D map 已生成 CPU 字节码和 GLSL，GPU atlas 已接自定义模型；还没有控制流/ODE 与全模型 GPU。
+1. Lua 2D map 已支持比较/逻辑/三元/if，CPU+GLSL；还没有 ODE 与全模型 GPU。
 2. GPU compute atlas 目前只支持 Lua 自定义模型；双摆/Logistic/Hénon 走 CPU。
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出仍固定到 exe 旁 exports/。
@@ -281,4 +291,4 @@ src/selftest.c      CPU 107 项；含 GPU 的 122 项
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.11.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.12.0.zip`

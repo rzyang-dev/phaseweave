@@ -13,7 +13,9 @@ enum {
     OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD, OP_POW, OP_NEG,
     OP_SIN, OP_COS, OP_TAN, OP_ASIN, OP_ACOS, OP_ATAN,
     OP_SQRT, OP_ABS, OP_EXP, OP_LOG, OP_FLOOR, OP_CEIL,
-    OP_ATAN2, OP_MIN, OP_MAX, OP_POWF
+    OP_ATAN2, OP_MIN, OP_MAX, OP_POWF,
+    OP_LT, OP_LE, OP_GT, OP_GE, OP_EQ, OP_NE,
+    OP_AND, OP_OR, OP_NOT, OP_IF
 };
 
 typedef struct {
@@ -56,6 +58,7 @@ static int is_ident_start(int c) { return isalpha(c) || c == '_'; }
 static int is_ident_char(int c) { return isalnum(c) || c == '_'; }
 
 static int parse_expr(Parser *P);
+static int parse_add(Parser *P);
 
 static int parse_primary(Parser *P)
 {
@@ -95,8 +98,20 @@ static int parse_primary(Parser *P)
             else if (strcmp(name, "min") == 0) fn = OP_MIN;
             else if (strcmp(name, "max") == 0) fn = OP_MAX;
             else if (strcmp(name, "pow") == 0) fn = OP_POWF;
+            else if (strcmp(name, "if") == 0) fn = OP_IF;
             else { perr(P, "unknown function '%s'", name); return 0; }
-            if (!(fn == OP_ATAN2 || fn == OP_MIN || fn == OP_MAX || fn == OP_POWF)) {
+            if (fn == OP_IF) {
+                if (!parse_expr(P)) return 0;
+                skip(P);
+                if (*P->p != ',') { perr(P, "expected ',' in if"); return 0; }
+                P->p++;
+                if (!parse_expr(P)) return 0;
+                skip(P);
+                if (*P->p != ',') { perr(P, "expected ',' in if"); return 0; }
+                P->p++;
+                if (!parse_expr(P)) return 0;
+                args = 3;
+            } else if (!(fn == OP_ATAN2 || fn == OP_MIN || fn == OP_MAX || fn == OP_POWF)) {
                 if (!parse_expr(P)) return 0;
                 args = 1;
             } else {
@@ -138,6 +153,7 @@ static int parse_unary(Parser *P)
     skip(P);
     if (*P->p == '+' ) { P->p++; return parse_unary(P); }
     if (*P->p == '-' ) { P->p++; if (!parse_unary(P)) return 0; return emit(P, OP_NEG, 0, 0.0); }
+    if (*P->p == '!' ) { P->p++; if (!parse_unary(P)) return 0; return emit(P, OP_NOT, 0, 0.0); }
     return parse_primary(P);
 }
 
@@ -170,7 +186,7 @@ static int parse_term(Parser *P)
     return 1;
 }
 
-static int parse_expr(Parser *P)
+static int parse_add(Parser *P)
 {
     if (!parse_term(P)) return 0;
     for (;;) {
@@ -184,6 +200,87 @@ static int parse_expr(Parser *P)
         if (!emit(P, op, 0, 0.0)) return 0;
     }
     return 1;
+}
+
+static int parse_cmp(Parser *P)
+{
+    if (!parse_add(P)) return 0;
+    for (;;) {
+        int op = 0, len = 1;
+        skip(P);
+        if (P->p[0] == '<' && P->p[1] == '=') { op = OP_LE; len = 2; }
+        else if (P->p[0] == '>' && P->p[1] == '=') { op = OP_GE; len = 2; }
+        else if (P->p[0] == '<') op = OP_LT;
+        else if (P->p[0] == '>') op = OP_GT;
+        else break;
+        P->p += len;
+        if (!parse_add(P)) return 0;
+        if (!emit(P, op, 0, 0.0)) return 0;
+    }
+    return 1;
+}
+
+static int parse_eq(Parser *P)
+{
+    if (!parse_cmp(P)) return 0;
+    for (;;) {
+        int op = 0;
+        skip(P);
+        if (P->p[0] == '=' && P->p[1] == '=') op = OP_EQ;
+        else if (P->p[0] == '!' && P->p[1] == '=') op = OP_NE;
+        else break;
+        P->p += 2;
+        if (!parse_cmp(P)) return 0;
+        if (!emit(P, op, 0, 0.0)) return 0;
+    }
+    return 1;
+}
+
+static int parse_and(Parser *P)
+{
+    if (!parse_eq(P)) return 0;
+    for (;;) {
+        skip(P);
+        if (P->p[0] != '&' || P->p[1] != '&') break;
+        P->p += 2;
+        if (!parse_eq(P)) return 0;
+        if (!emit(P, OP_AND, 0, 0.0)) return 0;
+    }
+    return 1;
+}
+
+static int parse_or(Parser *P)
+{
+    if (!parse_and(P)) return 0;
+    for (;;) {
+        skip(P);
+        if (P->p[0] != '|' || P->p[1] != '|') break;
+        P->p += 2;
+        if (!parse_and(P)) return 0;
+        if (!emit(P, OP_OR, 0, 0.0)) return 0;
+    }
+    return 1;
+}
+
+static int parse_ternary(Parser *P)
+{
+    if (!parse_or(P)) return 0;
+    skip(P);
+    if (*P->p == '?') {
+        P->p++;
+        if (!parse_expr(P)) return 0;
+        skip(P);
+        if (*P->p != ':') { perr(P, "expected ':' in ternary"); return 0; }
+        P->p++;
+        if (!parse_ternary(P)) return 0;
+        if (!emit(P, OP_IF, 0, 0.0)) return 0;
+    }
+    return 1;
+}
+
+static int parse_expr(Parser *P)
+{
+    return parse_ternary(P);
 }
 
 int expr_compile(Expr *e, const char *src,
@@ -244,6 +341,22 @@ double expr_eval(const Expr *e, const double *vars)
         case OP_MIN: sp--; st[sp-1] = fmin(st[sp-1], st[sp]); break;
         case OP_MAX: sp--; st[sp-1] = fmax(st[sp-1], st[sp]); break;
         case OP_POWF: sp--; st[sp-1] = pow(st[sp-1], st[sp]); break;
+        case OP_LT: sp--; st[sp-1] = st[sp-1] < st[sp] ? 1.0 : 0.0; break;
+        case OP_LE: sp--; st[sp-1] = st[sp-1] <= st[sp] ? 1.0 : 0.0; break;
+        case OP_GT: sp--; st[sp-1] = st[sp-1] > st[sp] ? 1.0 : 0.0; break;
+        case OP_GE: sp--; st[sp-1] = st[sp-1] >= st[sp] ? 1.0 : 0.0; break;
+        case OP_EQ: sp--; st[sp-1] = st[sp-1] == st[sp] ? 1.0 : 0.0; break;
+        case OP_NE: sp--; st[sp-1] = st[sp-1] != st[sp] ? 1.0 : 0.0; break;
+        case OP_AND: sp--; st[sp-1] = (st[sp-1] != 0.0 && st[sp] != 0.0) ? 1.0 : 0.0; break;
+        case OP_OR: sp--; st[sp-1] = (st[sp-1] != 0.0 || st[sp] != 0.0) ? 1.0 : 0.0; break;
+        case OP_NOT: st[sp-1] = st[sp-1] == 0.0 ? 1.0 : 0.0; break;
+        case OP_IF: {
+            double f = st[--sp];
+            double t = st[--sp];
+            double c = st[sp-1];
+            st[sp-1] = c != 0.0 ? t : f;
+            break;
+        }
         default: return 0.0;
         }
         if (sp < 0 || sp > 64) return 0.0;
@@ -298,6 +411,22 @@ static char *join_call2(const char *fn, const char *a, const char *b)
     return p;
 }
 
+static char *join_cond2(const char *a, const char *op, const char *b)
+{
+    size_t n = strlen(a) + strlen(b) + 24;
+    char *p = (char *)malloc(n);
+    if (p) snprintf(p, n, "((%s) %s (%s))", a, op, b);
+    return p;
+}
+
+static char *join_ternary(const char *c, const char *a, const char *b)
+{
+    size_t n = strlen(c) + strlen(a) + strlen(b) + 32;
+    char *p = (char *)malloc(n);
+    if (p) snprintf(p, n, "((%s) ? (%s) : (%s))", c, a, b);
+    return p;
+}
+
 int expr_to_glsl(const Expr *e, const char *const *var_glsl, int nvars,
                  char *out, size_t outsz, char *err, size_t errsz)
 {
@@ -317,8 +446,15 @@ int expr_to_glsl(const Expr *e, const char *const *var_glsl, int nvars,
                 break;
             }
             r = dup_str(var_glsl[in->arg]);
+        } else if (in->op == OP_IF) {
+            char *ct, *at, *bt;
+            if (sp < 3) { if (err) snprintf(err, errsz, "GLSL stack underflow"); break; }
+            bt = st[--sp]; at = st[--sp]; ct = st[--sp];
+            r = join_ternary(ct, at, bt);
+            free(ct); free(at); free(bt);
         } else {
-            int unary = (in->op >= OP_NEG && in->op <= OP_CEIL);
+            int unary = (in->op == OP_NEG || in->op == OP_NOT ||
+                         (in->op >= OP_SIN && in->op <= OP_CEIL));
             if (sp < (unary ? 1 : 2)) { if (err) snprintf(err, errsz, "GLSL stack underflow"); break; }
             if (!unary) b = st[--sp];
             a = st[--sp];
@@ -345,6 +481,15 @@ int expr_to_glsl(const Expr *e, const char *const *var_glsl, int nvars,
             case OP_LOG: r = join_call1("log", a); break;
             case OP_FLOOR: r = join_call1("floor", a); break;
             case OP_CEIL: r = join_call1("ceil", a); break;
+            case OP_LT: r = join3(a, b, "<"); break;
+            case OP_LE: r = join3(a, b, "<="); break;
+            case OP_GT: r = join3(a, b, ">"); break;
+            case OP_GE: r = join3(a, b, ">="); break;
+            case OP_EQ: r = join3(a, b, "=="); break;
+            case OP_NE: r = join3(a, b, "!="); break;
+            case OP_AND: r = join_cond2(a, "&&", b); break;
+            case OP_OR: r = join_cond2(a, "||", b); break;
+            case OP_NOT: r = join_call1("!", a); break;
             default: break;
             }
             free(a); free(b);

@@ -93,7 +93,7 @@ M.custom = {
         { name="x",      label="x",      unit="", min=-2.0, max=2.0, cyclic=false, expr="x" },
         { name="y",      label="y",      unit="", min=-2.0, max=2.0, cyclic=false, expr="y" },
         { name="radius", label="radius", unit="", min=0.0, max=3.0, cyclic=false, expr="sqrt(x*x + y*y)" },
-        { name="x_abs",  label="|x|",    unit="", min=0.0, max=2.0, cyclic=false, expr="abs(x)" },
+        { name="x_abs",  label="|x|",    unit="", min=0.0, max=2.0, cyclic=false, expr="if(x < 0, -x, x)" },
     },
 }
 M.models.custom = M.custom

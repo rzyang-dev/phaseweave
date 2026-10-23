@@ -397,6 +397,20 @@ static void test_expressions_and_custom(void)
     check(fabs(expr_eval(&ex, v) - 5.0) < 1e-12, "expression precedence/functions");
     check(expr_compile(&ex, "sqrt(9) + abs(-2)", vars, 2, err, sizeof(err)), "expression functions compile");
     check(fabs(expr_eval(&ex, v) - 5.0) < 1e-12, "sqrt/abs evaluate");
+    check(expr_compile(&ex, "x < 0.5 ? 2*x : 2 - 2*x", vars, 1, err, sizeof(err)),
+          "ternary/compare compiles");
+    v[0] = 0.25;
+    check(fabs(expr_eval(&ex, v) - 0.5) < 1e-12, "ternary true branch");
+    v[0] = 0.75;
+    check(fabs(expr_eval(&ex, v) - 0.5) < 1e-12, "ternary false branch");
+    check(expr_compile(&ex, "if(x < 0, -x, x)", vars, 1, err, sizeof(err)),
+          "if() control flow compiles");
+    v[0] = -3.0;
+    check(fabs(expr_eval(&ex, v) - 3.0) < 1e-12, "if() control flow evaluates");
+    check(expr_compile(&ex, "x >= 0 && x <= 1 ? x : 0", vars, 1, err, sizeof(err)),
+          "logical operators compile");
+    v[0] = 0.5;
+    check(fabs(expr_eval(&ex, v) - 0.5) < 1e-12, "logical expression matches");
 
     platform_exe_dir(dir, sizeof(dir));
     snprintf(path, sizeof(path), "%s\\experiments\\experiment.lua", dir);
@@ -777,7 +791,7 @@ static void test_gpu_custom(Gpu *g)
     strcpy(spec.init_x, "x0"); strcpy(spec.init_y, "y0");
     strcpy(spec.step_x, "1 - a*x*x + y"); strcpy(spec.step_y, "b*x");
     strcpy(spec.chan_expr[0], "x"); strcpy(spec.chan_expr[1], "y");
-    strcpy(spec.chan_expr[2], "sqrt(x*x + y*y)"); strcpy(spec.chan_expr[3], "abs(x)");
+    strcpy(spec.chan_expr[2], "sqrt(x*x + y*y)"); strcpy(spec.chan_expr[3], "if(x < 0, -x, x)");
     check(custom_model_build(&cm, &spec, err, sizeof(err)) == 1, "GPU custom model builds");
     check(custom_model_glsl(&cm, glsl, sizeof(glsl), err, sizeof(err)) == 1, "GLSL source generated");
     check(gpu_compile_custom(g, glsl, err, sizeof(err)) == 1, "generated GLSL compiles");
