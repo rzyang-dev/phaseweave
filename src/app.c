@@ -15,8 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DP_HOT_RES_ID 1001
-
 struct App {
     HINSTANCE inst;
     AppOptions opt;
@@ -60,8 +58,6 @@ struct App {
     unsigned char lut[DP_LUT_N * 3];
     char     hot_path[MAX_PATH];
     char     title[512];
-    const void *embedded;
-    size_t   embedded_len;
 };
 
 static void app_reload(App *a);
@@ -260,6 +256,14 @@ static int app_read_disk_hot(App *a, char **data, size_t *len)
     char path[MAX_PATH];
     char dir[MAX_PATH];
     platform_exe_dir(dir, sizeof(dir));
+    snprintf(path, sizeof(path), "%s\\experiments\\double-pendulum.lua", dir);
+    strncpy(a->hot_path, path, sizeof(a->hot_path) - 1);
+    a->hot_path[sizeof(a->hot_path) - 1] = 0;
+    if (platform_read_file(path, data, len)) {
+        a->hot_from_disk = 1;
+        return 1;
+    }
+    /* 兼容旧布局：exe 旁边的 hot.lua */
     snprintf(path, sizeof(path), "%s\\hot.lua", dir);
     strncpy(a->hot_path, path, sizeof(a->hot_path) - 1);
     a->hot_path[sizeof(a->hot_path) - 1] = 0;
@@ -529,23 +533,22 @@ static void app_reload(App *a)
     char err[1024];
     DpConfig next;
 
-    if (!a->lua) {
-        app_error_box(a, "Lua hot logic is not available.");
+    if (!app_read_disk_hot(a, &disk, &disk_len)) {
+        app_error_box(a, "experiments/double-pendulum.lua not found next to dp-phase.exe");
         return;
     }
-
-    if (app_read_disk_hot(a, &disk, &disk_len)) {
-        src = disk;
-        len = disk_len;
-    } else {
-        src = (const char *)a->embedded;
-        len = a->embedded_len;
+    if (!a->lua) {
+        app_error_box(a, "Lua hot logic is not available.");
+        if (disk) platform_free(disk);
+        return;
     }
+    src = disk;
+    len = disk_len;
     err[0] = 0;
-    if (!src || len == 0 || !lua_hot_reload(a->lua, src, len, a->hot_path[0] ? a->hot_path : "hot.lua",
+    if (!src || len == 0 || !lua_hot_reload(a->lua, src, len, a->hot_path[0] ? a->hot_path : "double-pendulum.lua",
                                           err, sizeof(err))) {
         char msg[1200];
-        snprintf(msg, sizeof(msg), "hot.lua reload failed: %s", err[0] ? err : "unknown error");
+        snprintf(msg, sizeof(msg), "experiment reload failed: %s", err[0] ? err : "unknown error");
         app_error_box(a, msg);
         if (disk) platform_free(disk);
         return;
@@ -614,8 +617,6 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     int gpu_ok = 0;
     int force_kernel;
     char gpu_err[512];
-    const void *embedded = NULL;
-    size_t embedded_len = 0;
     char lua_err[512];
 
     if (err && errsz) err[0] = 0;
@@ -632,25 +633,12 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     force_kernel = opt->force_kernel;
     need_display = !(opt->headless && force_kernel == DP_KERNEL_CPU);
 
-    platform_read_resource(DP_HOT_RES_ID, &embedded, &embedded_len);
-    a->embedded = embedded;
-    a->embedded_len = embedded_len;
-
     {
         char *disk = NULL;
         size_t disk_len = 0;
-        const char *src = NULL;
-        size_t len = 0;
         if (app_read_disk_hot(a, &disk, &disk_len)) {
-            src = disk;
-            len = disk_len;
-        } else if (embedded && embedded_len) {
-            src = (const char *)embedded;
-            len = embedded_len;
-        }
-        if (src && len) {
             lua_err[0] = 0;
-            a->lua = lua_hot_create(src, len, a->hot_path[0] ? a->hot_path : "hot.lua",
+            a->lua = lua_hot_create(disk, disk_len, a->hot_path[0] ? a->hot_path : "double-pendulum.lua",
                                     "gpu", a->cfg.grid.res, lua_err, sizeof(lua_err));
             if (a->lua) {
                 a->use_lua = 1;
@@ -663,10 +651,10 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
                     dp_config_defaults(&a->cfg);
                 }
             } else {
-                app_error_box(a, lua_err[0] ? lua_err : "hot.lua failed to load");
+                app_error_box(a, lua_err[0] ? lua_err : "experiment Lua failed to load");
             }
+            platform_free(disk);
         }
-        if (disk) platform_free(disk);
     }
     if (opt->force_res > 0) a->cfg.grid.res = dp_clampi(opt->force_res, 32, 1024);
     app_params_from_cfg(a);
@@ -720,14 +708,13 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
         }
 
         {
-            const void *ui = NULL, *rt = NULL;
-            size_t ui_len = 0, rt_len = 0;
             RECT work;
             int panel_y, panel_h;
             PanelCallbacks cb;
             char panel_err[512];
-            platform_read_resource(1002, &ui, &ui_len);
-            platform_read_resource(1003, &rt, &rt_len);
+            char dir[MAX_PATH], ui_path[MAX_PATH];
+            platform_exe_dir(dir, sizeof(dir));
+            snprintf(ui_path, sizeof(ui_path), "%s\\ui\\panel.tcl", dir);
             SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
             panel_y = 16 + a->pend_h + 46;
             panel_h = dp_clampi((int)(work.bottom - work.top) - panel_y - 16, 420, 540);
@@ -737,7 +724,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
             cb.status = panel_status_cb;
             cb.quit = panel_quit_cb;
             panel_err[0] = 0;
-            a->panel = panel_create(&cb, (const char *)ui, ui_len, rt, rt_len,
+            a->panel = panel_create(&cb, ui_path,
                                     a->right_x, panel_y, a->right_w, panel_h,
                                     panel_err, sizeof(panel_err));
             if (!a->panel) {
@@ -748,9 +735,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
                     strncat(logpath, "dp-panel-error.txt", MAX_PATH - strlen(logpath) - 1);
                     lf = fopen(logpath, "a");
                     if (lf) {
-                        fprintf(lf, "panel failed: ui=%u rt=%u err=%s\n",
-                                (unsigned)ui_len, (unsigned)rt_len,
-                                panel_err[0] ? panel_err : "(no error)");
+                        fprintf(lf, "panel failed: err=%s\n", panel_err[0] ? panel_err : "(no error)");
                         fclose(lf);
                     }
                 }

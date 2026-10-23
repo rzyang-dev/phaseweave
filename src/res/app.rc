@@ -3,10 +3,6 @@
 /* 热逻辑脚本：点击 F5 会优先读 exe 同目录的 hot.lua，没有就读这一份 */
 1001 RCDATA "lua/hot.lua"
 
-/* Tcl/Tk 控制面板：UI 脚本 + 运行时归档（DLL + tcl8.6/tk8.6 脚本树） */
-1002 RCDATA "ui/panel.tcl"
-1003 RCDATA "build/gen/tcltk.bin"
-
 /* DPI 感知 + Win10 兼容 */
 1 24 "src/res/app.manifest"
 

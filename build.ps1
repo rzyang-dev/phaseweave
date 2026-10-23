@@ -1,17 +1,13 @@
-# build.ps1 - Double Pendulum Phase Space
+# build.ps1 - Double Pendulum Phase Space -> dynamical-systems atlas
 #
-# One script, one binary. Uses only the MinGW.org GCC 6.3 toolchain at C:\MinGW:
-#   gcc 6.3.0       C skeleton (Win32 + WGL + Lua host)
-#   gfortran 6.3.0  RK4 phase-space kernel
-#   windres         embeds hot.lua, the manifest and version info
-#   objdump         import-table audit
-# Everything is linked statically: the exe imports nothing but OS DLLs.
+# Toolchain: C:\MinGW (GCC 6.3, gfortran, windres, objdump, Tcl/Tk 8.6).
+# Deliverable: dist/dp-phase/ (portable folder) + dist/dp-phase-1.4.0.zip.
+# Tcl/Tk is dynamically linked and shipped in the folder; no extraction at runtime.
 #
 #   .\build.ps1              build + self-test
 #   .\build.ps1 -Clean       wipe build/ and dist/ first
 #   .\build.ps1 -NoTest      skip self-tests
 #   .\build.ps1 -NoGpuTest   skip the GPU compute check
-#
 param(
     [switch]$Clean,
     [switch]$NoTest,
@@ -35,11 +31,12 @@ $build = Join-Path $root 'build'
 $obj   = Join-Path $build 'obj'
 $gen   = Join-Path $build 'gen'
 $dist  = Join-Path $root 'dist'
+$stage = Join-Path $dist 'dp-phase'
 
 if ($Clean) {
     Remove-Item -Recurse -Force $build, $dist -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Force -Path $obj, $gen, $dist | Out-Null
+New-Item -ItemType Directory -Force -Path $obj, $gen, $dist, $stage | Out-Null
 
 function Invoke-Tool {
     param([string]$Exe, [string[]]$Arguments, [string]$What)
@@ -63,41 +60,20 @@ function Escape-Shader {
     return $t
 }
 
-Write-Host '=== Double Pendulum Phase Space ==='
+Write-Host '=== Dynamical Systems Atlas ==='
 Write-Host ("toolchain: " + $mingw)
 
-Write-Host '[1/6] packaging Tcl/Tk runtime'
+Write-Host '[1/6] checking Tcl/Tk runtime'
 $tclDll = Join-Path $mingw 'bin\tcl86.dll'
 $tkDll  = Join-Path $mingw 'bin\tk86.dll'
+$gccDll = Join-Path $mingw 'bin\libgcc_s_dw2-1.dll'
+$zlibDll= Join-Path $mingw 'bin\zlib1.dll'
 $tclLib = Join-Path $mingw 'lib\tcl8.6'
 $tkLib  = Join-Path $mingw 'lib\tk8.6'
-foreach ($path in @($tclDll, $tkDll, $tclLib, $tkLib)) {
+foreach ($path in @($tclDll, $tkDll, $gccDll, $zlibDll, $tclLib, $tkLib)) {
     if (-not (Test-Path $path)) { throw "missing Tcl/Tk component: $path" }
 }
-$tclFiles = New-Object System.Collections.Generic.List[object]
-$tclFiles.Add([pscustomobject]@{ Full = $tclDll; Rel = 'tcl86.dll' })
-$tclFiles.Add([pscustomobject]@{ Full = $tkDll;  Rel = 'tk86.dll' })
-foreach ($tree in @(@{ Root = $tclLib; Prefix = 'tcl8.6' }, @{ Root = $tkLib; Prefix = 'tk8.6' })) {
-    Get-ChildItem $tree.Root -Recurse -File | ForEach-Object {
-        $rel = $tree.Prefix + '/' + $_.FullName.Substring($tree.Root.Length + 1).Replace('\', '/')
-        $tclFiles.Add([pscustomobject]@{ Full = $_.FullName; Rel = $rel })
-    }
-}
-$tclArchive = Join-Path $gen 'tcltk.bin'
-$fs = [IO.File]::Create($tclArchive)
-$bw = New-Object IO.BinaryWriter($fs)
-$bw.Write([byte[]](0x44, 0x50, 0x54, 0x43, 0x4C, 0x38, 0x36, 0x00))
-$bw.Write([uint32]$tclFiles.Count)
-foreach ($f in $tclFiles) {
-    $nameBytes = [Text.Encoding]::UTF8.GetBytes($f.Rel)
-    $bw.Write([uint16]$nameBytes.Length)
-    $bw.Write($nameBytes)
-    $data = [IO.File]::ReadAllBytes($f.Full)
-    $bw.Write([uint32]$data.Length)
-    $bw.Write($data)
-}
-$bw.Close()
-Write-Host ("      {0} files, {1:N1} MB" -f $tclFiles.Count, ((Get-Item $tclArchive).Length / 1MB))
+Write-Host '      tcl86.dll / tk86.dll / libgcc_s_dw2-1.dll / zlib1.dll'
 
 Write-Host '[2/6] embedding shaders'
 $fieldSrc = Escape-Shader (Join-Path $root 'shaders\field.comp')
@@ -130,7 +106,7 @@ $cflags = @(
 )
 $sources = @(
     'main.c', 'app.c', 'platform.c', 'sim.c', 'physics.c', 'pool.c',
-    'kernel_fortran.c', 'lua_hot.c', 'gpu.c', 'phase_view.c', 'pendulum_view.c', 'panel.c', 'tk_runtime.c', 'bmp.c', 'selftest.c'
+    'kernel_fortran.c', 'lua_hot.c', 'gpu.c', 'phase_view.c', 'pendulum_view.c', 'panel.c', 'bmp.c', 'selftest.c'
 )
 $objects = @()
 foreach ($s in $sources) {
@@ -156,12 +132,13 @@ Invoke-Tool $rc @('-c', '65001', '-I', $root, '-I', (Join-Path $root 'src\res'),
                   '-i', (Join-Path $root 'src\res\app.rc'), '-o', $robj) 'windres'
 $objects += $robj
 
-Write-Host '[6/6] linking (static)'
-$exe = Join-Path $dist 'dp-phase.exe'
+Write-Host '[6/6] linking (dynamic Tcl/Tk, static C/Fortran)'
+$exe = Join-Path $stage 'dp-phase.exe'
 $lflags = @(
     '-mwindows', '-static', '-static-libgcc', '-static-libgfortran',
     '-Wl,--gc-sections', '-Wl,--enable-stdcall-fixup', '-s',
-    '-lopengl32', '-lgdi32', '-luser32', '-lwinmm', '-llua', '-lm'
+    '-lopengl32', '-lgdi32', '-luser32', '-lwinmm', '-llua', '-lm',
+    '-ltk86', '-ltcl86'
 )
 Invoke-Tool $fc ($objects + @('-o', $exe) + $lflags) 'link'
 
@@ -169,18 +146,43 @@ $size = (Get-Item $exe).Length
 Write-Host ("OK -> {0}  ({1:N0} bytes)" -f $exe, $size)
 
 Write-Host ''
+Write-Host '--- staging portable folder ---'
+Copy-Item $tclDll  $stage -Force
+Copy-Item $tkDll   $stage -Force
+Copy-Item $gccDll  $stage -Force
+Copy-Item $zlibDll $stage -Force
+$stageLib = Join-Path $stage 'lib'
+New-Item -ItemType Directory -Force -Path $stageLib | Out-Null
+Copy-Item $tclLib (Join-Path $stageLib 'tcl8.6') -Recurse -Force
+Copy-Item $tkLib  (Join-Path $stageLib 'tk8.6')  -Recurse -Force
+$stageUi = Join-Path $stage 'ui'
+New-Item -ItemType Directory -Force -Path $stageUi | Out-Null
+Copy-Item (Join-Path $root 'ui\panel.tcl') $stageUi -Force
+$stageExp = Join-Path $stage 'experiments'
+New-Item -ItemType Directory -Force -Path $stageExp | Out-Null
+Copy-Item (Join-Path $root 'lua\hot.lua') (Join-Path $stageExp 'double-pendulum.lua') -Force
+Copy-Item (Join-Path $root 'README.md') $stage -Force -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $root 'docs') (Join-Path $stage 'docs') -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host ("      staged {0:N1} MB" -f ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum / 1MB))
+
+$zip = Join-Path $dist 'dp-phase-1.4.0.zip'
+Remove-Item $zip -Force -ErrorAction SilentlyContinue
+Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
+Write-Host ("      {0}  ({1:N1} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))
+
+Write-Host ''
 Write-Host '--- import table audit ---'
 $imports = & $od -p $exe | Select-String 'DLL Name:' | ForEach-Object {
     ($_ -split 'DLL Name:')[1].Trim()
 } | Sort-Object -Unique
-$allowed = @('kernel32.dll', 'user32.dll', 'gdi32.dll', 'opengl32.dll', 'winmm.dll', 'msvcrt.dll')
+$allowed = @('kernel32.dll', 'user32.dll', 'gdi32.dll', 'opengl32.dll', 'winmm.dll', 'msvcrt.dll', 'tcl86.dll', 'tk86.dll')
 $badImports = $false
 foreach ($dll in $imports) {
     $low = $dll.ToLower()
     if ($allowed -contains $low) { Write-Host ("  [ok]   {0}" -f $dll) }
     else { Write-Host ("  [BAD]  {0}" -f $dll); $badImports = $true }
 }
-if ($badImports) { throw 'non-OS DLL import detected' }
+if ($badImports) { throw 'unexpected DLL import detected' }
 
 if (-not $NoTest) {
     Write-Host ''
