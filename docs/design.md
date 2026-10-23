@@ -277,9 +277,9 @@ function M.schema(id) return M.models[id] end
 
 ## 12. 打包
 
-`build.ps1` 六步；C 26 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
+`build.ps1` 六步；C 27 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.9 MB，exe 约 447 KB。
+zip 约 3.9 MB，exe 约 449 KB。
 
 ## 13. 物理与数值边界
 
@@ -291,7 +291,7 @@ zip 约 3.9 MB，exe 约 447 KB。
 
 已知限制：
 
-- 内置模型（双摆/Logistic/Hénon/Standard）+ Lua 表达式 map/ODE；全模型 GPU + 数字刻度 + 轴名直绘已完成；
+- 内置模型（双摆/Logistic/Hénon/Standard/Gingerbread）+ Lua 表达式 map/ODE；全模型 GPU + 数字刻度 + 轴名直绘已完成；
 - GUI 默认 CPU；Kernel=GPU 可启用全模型 GPU atlas；
 - map 只有面板 Inspect，没有独立窗口 inspector；
 - 无文件选择对话框、实验保存/加载；PNG 只包含 atlas；

@@ -96,6 +96,27 @@ static int henon(const Experiment *e, char *out, size_t outsz, size_t *pos)
     return 1;
 }
 
+static int gingerbread(const Experiment *e, char *out, size_t outsz, size_t *pos)
+{
+    (void)e;
+    header(e, out, outsz, pos, 0);
+    app(out, outsz, pos,
+        "  float x = cells[i*16+0];\n"
+        "  float y = cells[i*16+1];\n"
+        "  for (int s=0; s<uSteps; ++s) {\n"
+        "    float nx = 1.0 - y + abs(x);\n"
+        "    float ny = x;\n"
+        "    if (isnan(nx) || isnan(ny) || isinf(nx) || isinf(ny) ||\n"
+        "        abs(nx) > 1e6 || abs(ny) > 1e6) { nx = 0.0; ny = 0.0; }\n"
+        "    x = nx; y = ny;\n"
+        "  }\n"
+        "  cells[i*16+0]=x; cells[i*16+1]=y;\n"
+        "  chans[i*4+0]=x; chans[i*4+1]=y;\n"
+        "  chans[i*4+2]=sqrt(x*x+y*y); chans[i*4+3]=abs(x);\n"
+        "}\n");
+    return 1;
+}
+
 static int standard(const Experiment *e, char *out, size_t outsz, size_t *pos)
 {
     (void)e;
@@ -184,6 +205,7 @@ int model_builtin_glsl(const Experiment *e, char *out, size_t outsz,
     if (!e || !out || outsz == 0) return 0;
     if (strcmp(e->model, "logistic") == 0) ok = logistic(e, out, outsz, &pos);
     else if (strcmp(e->model, "henon") == 0) ok = henon(e, out, outsz, &pos);
+    else if (strcmp(e->model, "gingerbread") == 0) ok = gingerbread(e, out, outsz, &pos);
     else if (strcmp(e->model, "standard") == 0) ok = standard(e, out, outsz, &pos);
     else if (strcmp(e->model, "double_pendulum") == 0) ok = dp(e, out, outsz, &pos);
     else {

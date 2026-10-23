@@ -6,16 +6,16 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ## 1. 构建
 
 ```text
-[3/6] compiling C skeleton (26 objects)
+[3/6] compiling C skeleton (27 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (447,488 bytes)
-      staged 10.5 MB
-      dist/dp-phase-1.30.0.zip (4.3 MB)
+OK -> dist/dp-phase/dp-phase.exe (449,024 bytes)
+      staged 10.6 MB
+      dist/dp-phase-1.31.0.zip (4.3 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 447,488 B |
+| exe | 449,024 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -54,10 +54,10 @@ OK -> dist/dp-phase/dp-phase.exe (447,488 bytes)
   [ok]   session load
   [ok]   session axes/ranges roundtrip
   [ok]   session integration roundtrip
-selftest: 139 passed, 0 failed
+selftest: 141 passed, 0 failed
 ```
 
-`/gpu-selftest`：**175/175**（124 CPU + 旧 GPU + 表达式/ODE/标准映射/GPU atlas/FTLE 回归）。
+`/gpu-selftest`：**181/181**（124 CPU + 旧 GPU + 表达式/ODE/标准映射/GPU atlas/FTLE 回归）。
 GUI 默认采样 CPU；View 的 Kernel=GPU 可启用全模型 GPU atlas（读回后再 CPU colorize/显示）。
 
 ## 3. 双摆三窗口
@@ -93,9 +93,9 @@ GUI 默认采样 CPU；View 的 Kernel=GPU 可启用全模型 GPU atlas（读回
 - Color by = x，64×64，连续帧；
 - 自检：1000 步后状态有限、|x|<2、|y|<1，radius 通道有效。
 
-## 6. 模型切换与 Standard map
+## 6. 模型切换与 Standard/Gingerbread
 
-Standard map 已加入内置模型与 GPU shader；默认 k/p0 轴，theta0 固定。
+Standard/Gingerbreadmap 已加入内置模型与 GPU shader；默认轴分别是 k/p0 与 x0/y0。
 
 ## 7. 模型切换
 
@@ -205,7 +205,7 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
   [ok]   GPU custom dispatch
   [ok]   GPU custom state matches CPU
   [ok]   GPU custom channels match CPU
-selftest: 175 passed, 0 failed
+selftest: 181 passed, 0 failed
 ```
 
 测试用单格 10 步 + 8×8 atlas 2 步 Hénon 表达式；单格容差 1e-5，atlas 2 步逐值一致。

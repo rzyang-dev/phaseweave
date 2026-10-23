@@ -11,6 +11,7 @@
 #include "model_custom.h"
 #include "model_glsl.h"
 #include "model_standard.h"
+#include "model_gingerbread.h"
 #include "phase_view.h"
 #include "session.h"
 #include "physics.h"
@@ -242,10 +243,11 @@ static void test_maps(void)
     int i;
 
     printf("-- map models\n");
-    check(model_count() == 4, "four models are registered");
+    check(model_count() == 5, "five models are registered");
     check(model_by_id("logistic") == &LOGISTIC_MODEL, "logistic lookup");
     check(model_by_id("henon") == &HENON_MODEL, "henon lookup");
     check(model_by_id("standard") == &STANDARD_MODEL, "standard lookup");
+    check(model_by_id("gingerbread") == &GINGERBREAD_MODEL, "gingerbread lookup");
 
     memset(vals, 0, sizeof(vals));
     vals[0] = 2.5; vals[1] = 0.5;
@@ -275,6 +277,13 @@ static void test_maps(void)
         STANDARD_MODEL.init(&STANDARD_MODEL, sv, st);
         STANDARD_MODEL.step(&STANDARD_MODEL, st, sv, 0.0, 1);
         check(fabs(st[1] - (0.2 + 0.5*sin(0.1))) < 1e-12, "standard map p update");
+    }
+    {
+        double gv[MODEL_MAX_PARAMS] = { 0.2, -0.1 };
+        double gs[MODEL_MAX_STATE];
+        GINGERBREAD_MODEL.init(&GINGERBREAD_MODEL, gv, gs);
+        GINGERBREAD_MODEL.step(&GINGERBREAD_MODEL, gs, gv, 0.0, 1);
+        check(fabs(gs[0] - (1.0 - (-0.1) + 0.2)) < 1e-12, "gingerbread x update");
     }
     exp_init(&e, &LOGISTIC_MODEL);
     e.res = 16;
@@ -1110,6 +1119,7 @@ static void test_gpu_custom(Gpu *g)
     test_gpu_builtin(g, &HENON_MODEL, "henon GPU atlas matches CPU");
     test_gpu_builtin(g, &DP_MODEL, "double-pendulum GPU atlas matches CPU");
     test_gpu_builtin(g, &STANDARD_MODEL, "standard GPU atlas matches CPU");
+    test_gpu_builtin(g, &GINGERBREAD_MODEL, "gingerbread GPU atlas matches CPU");
 }
 
 static void test_gpu(void)
