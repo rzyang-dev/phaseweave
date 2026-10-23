@@ -66,7 +66,40 @@ function Escape-Shader {
 Write-Host '=== Double Pendulum Phase Space ==='
 Write-Host ("toolchain: " + $mingw)
 
-Write-Host '[1/5] embedding shaders'
+Write-Host '[1/6] packaging Tcl/Tk runtime'
+$tclDll = Join-Path $mingw 'bin\tcl86.dll'
+$tkDll  = Join-Path $mingw 'bin\tk86.dll'
+$tclLib = Join-Path $mingw 'lib\tcl8.6'
+$tkLib  = Join-Path $mingw 'lib\tk8.6'
+foreach ($path in @($tclDll, $tkDll, $tclLib, $tkLib)) {
+    if (-not (Test-Path $path)) { throw "missing Tcl/Tk component: $path" }
+}
+$tclFiles = New-Object System.Collections.Generic.List[object]
+$tclFiles.Add([pscustomobject]@{ Full = $tclDll; Rel = 'tcl86.dll' })
+$tclFiles.Add([pscustomobject]@{ Full = $tkDll;  Rel = 'tk86.dll' })
+foreach ($tree in @(@{ Root = $tclLib; Prefix = 'tcl8.6' }, @{ Root = $tkLib; Prefix = 'tk8.6' })) {
+    Get-ChildItem $tree.Root -Recurse -File | ForEach-Object {
+        $rel = $tree.Prefix + '/' + $_.FullName.Substring($tree.Root.Length + 1).Replace('\', '/')
+        $tclFiles.Add([pscustomobject]@{ Full = $_.FullName; Rel = $rel })
+    }
+}
+$tclArchive = Join-Path $gen 'tcltk.bin'
+$fs = [IO.File]::Create($tclArchive)
+$bw = New-Object IO.BinaryWriter($fs)
+$bw.Write([byte[]](0x44, 0x50, 0x54, 0x43, 0x4C, 0x38, 0x36, 0x00))
+$bw.Write([uint32]$tclFiles.Count)
+foreach ($f in $tclFiles) {
+    $nameBytes = [Text.Encoding]::UTF8.GetBytes($f.Rel)
+    $bw.Write([uint16]$nameBytes.Length)
+    $bw.Write($nameBytes)
+    $data = [IO.File]::ReadAllBytes($f.Full)
+    $bw.Write([uint32]$data.Length)
+    $bw.Write($data)
+}
+$bw.Close()
+Write-Host ("      {0} files, {1:N1} MB" -f $tclFiles.Count, ((Get-Item $tclArchive).Length / 1MB))
+
+Write-Host '[2/6] embedding shaders'
 $fieldSrc = Escape-Shader (Join-Path $root 'shaders\field.comp')
 $vertSrc  = Escape-Shader (Join-Path $root 'shaders\display.vert')
 $fragSrc  = Escape-Shader (Join-Path $root 'shaders\display.frag')
@@ -88,7 +121,7 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllLines((Join-Path $gen 'shaders_gen.h'), $genLines, $utf8)
 Write-Host ("      field.comp {0:N0} B, display {1:N0} B" -f $fieldSrc.Length, ($vertSrc.Length + $fragSrc.Length))
 
-Write-Host '[2/5] compiling C skeleton'
+Write-Host '[3/6] compiling C skeleton'
 $cflags = @(
     '-std=gnu99', '-O2', '-Wall', '-Wextra', '-Wno-unused-parameter',
     '-fno-strict-aliasing', '-ffunction-sections', '-fdata-sections',
@@ -97,7 +130,7 @@ $cflags = @(
 )
 $sources = @(
     'main.c', 'app.c', 'platform.c', 'sim.c', 'physics.c', 'pool.c',
-    'kernel_fortran.c', 'lua_hot.c', 'gpu.c', 'phase_view.c', 'bmp.c', 'selftest.c'
+    'kernel_fortran.c', 'lua_hot.c', 'gpu.c', 'phase_view.c', 'pendulum_view.c', 'panel.c', 'tk_runtime.c', 'bmp.c', 'selftest.c'
 )
 $objects = @()
 foreach ($s in $sources) {
@@ -107,7 +140,7 @@ foreach ($s in $sources) {
 }
 Write-Host ("      {0} C objects" -f $objects.Count)
 
-Write-Host '[3/5] compiling Fortran kernel'
+Write-Host '[4/6] compiling Fortran kernel'
 $fflags = @(
     '-O3', '-finline-limit=4000', '-funroll-loops', '-ftree-vectorize',
     '-msse2', '-mfpmath=sse', '-fno-math-errno', '-ffree-line-length-none',
@@ -117,13 +150,13 @@ $fobj = Join-Path $obj 'kernel_fortran_f.o'
 Invoke-Tool $fc ($fflags + @('fortran\kernel.f90', '-o', $fobj)) 'compile kernel.f90'
 $objects += $fobj
 
-Write-Host '[4/5] compiling resources'
+Write-Host '[5/6] compiling resources'
 $robj = Join-Path $obj 'app_res.o'
 Invoke-Tool $rc @('-c', '65001', '-I', $root, '-I', (Join-Path $root 'src\res'),
                   '-i', (Join-Path $root 'src\res\app.rc'), '-o', $robj) 'windres'
 $objects += $robj
 
-Write-Host '[5/5] linking (static)'
+Write-Host '[6/6] linking (static)'
 $exe = Join-Path $dist 'dp-phase.exe'
 $lflags = @(
     '-mwindows', '-static', '-static-libgcc', '-static-libgfortran',

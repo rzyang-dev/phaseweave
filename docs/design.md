@@ -2,315 +2,264 @@
 
 ## 1. 目标与约束
 
-把单文件 raylib 版（`Double Pendulum Phase Space - Multi threaded - v1.2.cpp`，443 行）
-重构成一个原生 Windows 程序，同时满足：
+- 语言/工具链只用 `C:\MinGW`（GCC 6.3、gfortran、windres、Tcl/Tk 8.6.0）；
+- 原生 Windows PE，静态链接，**一个构建脚本、一个 exe、0 个外部依赖**；
+- C 做骨架；计算重的定长循环用 Fortran，或 GLSL compute（默认 GPU）；
+- 热逻辑在 Lua；
+- 相空间/双摆/控制面板是三个独立窗口，不是同一个窗口里的三个区域；
+- 保持小而直接，不引入场景图、脚本绑定生成器或额外框架。
 
-1. 只用 `C:\MinGW` 提供的前端和内建库；原生 PE、静态链接、0 个随程序分发的 DLL；
-   一个构建脚本、一个二进制。
-2. 按模块拆分；raylib 相关代码全部重写（这里直接用 Win32 + WGL + OpenGL）。
-3. 只保留左侧相空间；窗口是正方形。
-4. C 做骨架；两种计算内核：GLSL 计算着色器（默认）与 Fortran RK4（回退），
-   Fortran 负责定长循环的密集计算。
-5. 热逻辑用 Lua。
+## 2. 窗口与模块
 
-## 2. 模块边界
-
-```
-WinMain (src/main.c)
-  │  命令行 / 消息循环
-  └─ App (src/app.c)
-       ├─ Platform (src/platform.c)   Win32 窗口、QPC、控制台、RCDATA
-       ├─ LuaHot   (src/lua_hot.c)    hot.lua：默认值、调色板、步进、按键、标题
-       ├─ Sim      (src/sim.c)        网格状态 + 线程池
-       │    ├─ ThreadPool (src/pool.c)
-       │    └─ Fortran kernel (fortran/kernel.f90)      ← CPU 回退
-       └─ Gpu      (src/gpu.c)        WGL 4.3 core + compute/display  ← 默认
-            └─ shaders/field.comp, display.vert, display.frag
+```text
+main.c
+ └─ App
+     ├─ Platform        相空间顶层窗口、DPI、输入、RCDATA
+     ├─ PhaseView       视图变换、pick、平移/缩放、格线/圆圈
+     ├─ Gpu             场 SSBO/texture、display/line shader、读回
+     ├─ PendulumView    双摆 GDI 顶层窗口
+     ├─ Panel           Tcl/Tk 顶层窗口
+     │   └─ TkRuntime   DPTCL86 解包 + 动态加载
+     ├─ Sim             每步推进、选择读取
+     │   ├─ Pool        固定线程池
+     │   └─ kernel_fortran
+     └─ LuaHot          配置/调色板/按键/tick/status
 ```
 
-分层原则：
+三个窗口都由同一个 UI 线程创建和泵消息。相空间窗口用 WGL/OpenGL 4.3 渲染；
+双摆窗口用 GDI 双缓冲；面板用 Tk 自己的窗口和事件循环，通过 `Tcl_DoOneEvent` 接入主循环。
 
-* `sim.c` 不认识窗口，也不认识 GL；它只维护 `float state[4*n*n]` 与 `float field[n*n]`。
-* `gpu.c` 不认识 Lua 和 App；它只接收状态、参数、调色板，画到当前窗口。
-* `lua_hot.c` 只通过返回值和少量 `host.*` 查询和外界交互，不直接碰物理数组。
-* `app.c` 是唯一知道“什么时候调哪个内核、什么时候上传/取回”的地方。
+默认布局（1920×1080、125% 缩放）：
+
+| 窗口 | 外框 | 客户区 | 位置 |
+| --- | --- | --- | --- |
+| Phase Space | 706×735 | 700×700 | (19,48) |
+| Double Pendulum | 370×328 | 364×294 | (740,16) |
+| Control Panel | 382×587 | 364×540 | (740,355) |
+
+相空间边长按工作区的 0.68 取并 clamp 到 420–740，保证客户区正方形；右列宽度取相空间的
+0.52 并 clamp 到 300–380。面板高度按剩余工作区 clamp 到 420–540。
 
 ## 3. 数据流
 
-```
-            ┌──────────────── GPU ────────────────┐
-state ─────►│ SSBO (vec4×n²) → field.comp 子步循环 │──► R32F 场纹理 ─┐
-            └─────────────────────────────────────┘                 │
-            ┌──────────────── CPU ────────────────┐                 ├─► 1024×1 LUT ─► 窗口
-state ─────►│ 线程池 → Fortran 行带 RK4 → field[] │──► R32F 上传 ────┘        ▲
-            └─────────────────────────────────────┘                          │
-                                                                    Lua hot.palette()
-```
+每帧：
 
-场值只有一个分量：
+1. `platform_pump` 处理三个 Win32 窗口的消息；`panel_pump` 让 Tk 处理定时器/空闲；
+2. 若未暂停，按 `dt` 累计推进；GPU 路径调 `gpu_step`，CPU 路径调 `sim_step`；
+3. 读回选中格（GPU 用 `glReadPixels` 单像素；CPU 直接 `memcpy` 4 个 double）；
+4. `pendulum_view_set_state` 更新双摆窗口；`app_render_phase` 绘制场 + 叠加层；
+5. 更新相空间标题（内核/FPS/分辨率/调色板）；面板每 250 ms 通过 `dp_status` 拉状态。
 
-```
-u = fract( (θ1 + θ2) / (4π) + 0.5 )
-```
-
-原版颜色是 `HSV((hue1 + hue2) / 2, 0.8, 1.0)`，其中
-`hue_i = (θ_i + π) / (2π) * 360`；两个 hue 的平均正好只依赖 `θ1 + θ2`，
-所以整张相空间可以用**一维** 1024 项调色板表示。这样颜色逻辑集中在 Lua 一处，
-CPU 与 GPU 用同一张表，切换内核/调色板都不需要改核。
+动作入口只有一个：`app_do_action(name, value)`。键盘、面板按钮、组合框都走它，
+状态/错误统一写到 `last_action`，面板的 `Last:` 显示。
 
 ## 4. 物理内核
 
-与原版逐项一致的双摆方程（阻尼按原版的 `-c·ω` 处理）：
+方程与原始单文件一致：双摆的 θ1/θ2/ω1/ω2，RK4 固定步长，阻尼项 `-damping*omega`。
+每个像素是一个独立初值：
 
-```
-δ  = θ1 − θ2
-D  = m1 + m2·sin²δ
-θ̇1 = ω1
-θ̇2 = ω2
-ω̇1 = [ m2·g·sinθ2·cosδ − m2·sinδ·(l1·ω1²·cosδ + l2·ω2²) − (m1+m2)·g·sinθ1 ] / (l1·D) − c·ω1
-ω̇2 = [ (m1+m2)·(l1·ω1²·sinδ − g·sinθ2 + g·sinθ1·cosδ) + m2·l2·ω2²·sinδ·cosδ ] / (l2·D) − c·ω2
+```text
+theta1 = -range/2 + (x+0.5)/res*range
+theta2 = -range/2 + (y+0.5)/res*range
+omega1 = omega2 = 0
 ```
 
-RK4 固定四阶段；每步后把 `θ1, θ2` 归一化到 `[-π, π)`。
-`dt`、质量、长度、重力、阻尼全部由 Lua 每帧推送（`hot.params()`），
-所以改参数不需要重编译。
+“场值”是经过 `max_steps` 步后的一个标量（角速度组合 + 归一化），再经 LUT 映射颜色。
+C 参考实现 `dp_field_value` 用于自检和 CPU 回退的基准；Fortran/GPU 只追求与它同阶，
+不要求逐位一致。
 
-C 侧保留一份 `physics.c` 的参考 RK4（double + libm），只用于自测；
-同文件的场值/着色函数供 CPU 路径与 `/shot` 使用。主计算路径只有 Fortran 或 GLSL。
+## 5. GLSL compute（默认）
 
-## 5. GLSL 计算着色器（默认）
+- GL 4.3 core，WGL 上下文；`field.comp` 用 16×16 工作组，SSBO 读状态、写 R32F 图像；
+- 每个工作组先把参数/常量放到 shared memory，再按像素做四段 RK4；
+- 显示：全屏三角形 + `display.frag`，从 R32F 场采样，再查 1024×1 的调色板纹理；
+- 叠加层：`line.vert/frag` 画 NDC 顶点（位置 + RGBA），每个顶点 6 个 float；
+- `gpu_read_cell` 用 `glReadPixels` 读一个像素；`gpu_field_filter` 暴露过滤模式供自检。
 
-### 5.1 上下文
-
-`gpu.c` 先建一个临时上下文取 `wglCreateContextAttribsARB`，请求
-**OpenGL 4.3 core**（`WGL_CONTEXT_CORE_PROFILE_BIT_ARB`）。成功后加载本程序需要的最小
-GL 4.3 函数表（MinGW 自带的 `GL/glext.h` 是 2000 年的 SGI 版本，没有 compute shader，
-所以 `src/gl43.h` 自带一份声明）。失败则退回普通上下文 + 固定管线，见第 9 节。
-
-### 5.2 片上资源
-
-* **SSBO**：`layout(std430, binding=0) buffer StateBuf { vec4 cells[]; }`，
-  每格 `(θ1, θ2, ω1, ω2)`。
-* **场纹理**：`R32F`，计算着色器用 `imageStore` 直接写，显示着色器直接采样；
-  正常帧没有任何 `glReadPixels`/PBO 回读。
-* **shared memory**：每个 16×16 workgroup 先把本块状态搬进
-  `shared vec4 tile[16][16]`（4 KB），整帧的所有子步都在 shared 上跑完，
-  最后只回写一次 SSBO。这样每帧的 SSBO 读写从“每子步一次”降到“每帧一次”。
-* **调色板**：1024×1 RGBA8 纹理，`GL_REPEAT` + 线性过滤，由 Lua 生成、C 上传。
-
-### 5.3 调度
-
-```glsl
-layout(local_size_x = 16, local_size_y = 16) in;
-...
-for (int i = 0; i < uSteps; ++i) {
-    vec4 k1 = deriv(s);
-    vec4 k2 = deriv(s + 0.5 * uDt * k1);
-    vec4 k3 = deriv(s + 0.5 * uDt * k2);
-    vec4 k4 = deriv(s + uDt * k3);
-    s += (uDt / 6.0) * (k1 + 2.0*k2 + 2.0*k3 + k4);
-    s.x = norm_angle(s.x);
-    s.y = norm_angle(s.y);
-    if (any(isnan(s)) || any(isinf(s))) s = vec4(0.0);
-}
-```
-
-一次 dispatch 处理整帧的 `uSteps` 个子步；dispatch 后
-`glMemoryBarrier(SHADER_STORAGE | SHADER_IMAGE_ACCESS | TEXTURE_FETCH)`，
-再画全屏三角形。网格不是 16 的倍数时，所有 invocation 都参与 `barrier()`，
-越界者写 dummy，避免 workgroup 内提前 return 导致的 barrier 分歧。
-
-### 5.4 显示
-
-* 顶点着色器用 `gl_VertexID` 生成全屏三角形，不建 VBO；只建一个空 VAO。
-* `v = 0` 对应窗口顶边，和网格 `y = 0` 一致。
-* 片段着色器：`u = texture(uField, uv).r; color = texture(uLut, vec2(fract(u), 0.5)).rgb;`
-* CPU 内核也把 `field[]` 上传成同一张 R32F 纹理，所以现代显示路径只有一种。
+GPU 只负责“算场”和“画场”；视图的平移/缩放/周期/格线在 shader uniform 和
+`phase_view.c` 里做，不改变场的存储。
 
 ## 6. Fortran 行带内核（回退）
 
-### 6.1 ABI
+`fortran/dp_kernel.f90` 导出 `dp_fortran_bands`：每个线程处理若干行，行内像素连续。
+RK4 的 `deriv` 内联；sin/cos 用 1024 项查表 + 角度差恒等式；固定 4 段展开；
+`-finline-limit=4000`、`-O3`。C 侧 `pool.c` 用固定线程池按行带分发，每个 worker
+有自己的 `go`/`done` 事件，主线程等全部完成。
 
-```fortran
-subroutine dp_step_band(state, n, y0, y1, steps, m1, m2, l1, l2, g, damp, dt) &
-           bind(C, name="dp_step_band")
-```
-
-C 传入 `float state[4*n*n]`（行主序）和本次负责的行区间 `[y0, y1)`。
-每个 worker 只碰自己的行带，互不重叠。
-
-### 6.2 为什么不是直接调 sin/cos
-
-在这台机器上（1.7–1.9 GHz 的节能状态），msvcrt 的 `sin` 约 **115 ns/次**。
-原版每步每格 4 个阶段、每阶段 4 次三角函数，16 次调用会把一个 RK4 子步推到微秒级。
-Fortran 内核改了两件事：
-
-1. **1024 项 sin/cos 表 + 小角重构**：表项在 L1（16 KB），
-   `i = nint(x / Δ)`，余量 `r` 用 1−r²/2、r−r³/6 重构；截断误差在 1e-10 量级，远低于 float32 存储的 1e-7。
-2. **和差化积**：`sinδ/cosδ` 由已算出的 `sinθ1,cosθ1,sinθ2,cosθ2` 得到：
-   `sinδ = s1·c2 − c1·s2`，`cosδ = c1·c2 + s1·s2`。
-   每阶段从 3 次查表降到 2 次。
-
-角度归一化也不调 `fmod`：`k = int(θ/2π)`，`θ -= k·2π`，再做一次 ±2π 修正；
-配 `|θ| > 1e6` 和 NaN 护栏。
-
-### 6.3 定长循环与内联
-
-* RK4 的 4 个阶段手工展开，每阶段固定 4 个标量导数（`dth1,dth2,dom1,dom2`），没有循环。
-* `deriv` 是 host-associated 内部子程序；构建时 `-finline-limit=4000` 保证它被内联。
-  可以用 `objdump -t` 验证 `kernel_fortran_f.o` 里没有 `_deriv` 符号。
-* 全程 double 计算（表查询、和差化积、RK4、归一化），最后才写回 float，
-  与 C 参考的单步偏差约 2.4e-7（来自 float 存储）。
-* 编译参数：`-O3 -finline-limit=4000 -funroll-loops -ftree-vectorize
-  -msse2 -mfpmath=sse -fno-math-errno`。
-
-### 6.4 线程
-
-`pool.c` 是固定线程池：
-
-* 每个 worker 一对自动复位事件 `go`/`done`；
-* 主线程按行数均分 `[y0,y1)`，`SetEvent` 全部 worker，`WaitForMultipleObjects` 等齐；
-* worker 之间没有共享写，行带按格独立，所以 1 线程和 N 线程结果**逐位相同**（自测覆盖）。
-
-线程数默认取逻辑处理器数（本机 8），Lua 的 `sim.threads` 可以覆盖。
+选择 Fortran 回退的触发条件：GPU 创建/编译失败、用户按 K/面板选 `Fortran CPU`、
+或 `/cpu` 命令行。两条内核都写同一套状态（CPU 的 double 数组 / GPU 的 SSBO），
+上层不区分。
 
 ## 7. Lua 热逻辑
 
-### 7.1 契约
+`lua/hot.lua` 是唯一的“策略”来源：配置（res/range/dt/max_steps/threads/阻尼/质量/长度）、
+调色板、按键、每步推进函数。C 通过 `lua_hot_*` 调用，Lua 沙箱只开 base/table/string/math。
 
-脚本返回一个表 `hot`：
+契约（新增）：
 
-| 函数 | 返回 | 调用时机 |
+- `M.status() -> paused, scheme`：面板状态；
+- `M.set_scheme(name) -> bool`：面板下拉直接设置调色板；
+- `M.key(name) -> action`：R/Space/C/K 的语义；
+- `M.tick(dt) -> steps`：累计时间并返回本帧应推进的步数；
+- `M.params()`、`M.palette()`、`M.title(...)` 保持原契约。
+
+加载顺序：exe 内嵌 RCDATA 1001 → 若 exe 同目录有 `hot.lua` 则覆盖。F5/面板 Reload
+重新读磁盘并替换状态；失败时保留旧 `LuaHot`，把错误写到 `last_action`。改 res/range
+会调用 `app_reconfig` 重建仿真；改 dt/max_steps/params 在下一帧生效；改 scheme 重新读 LUT。
+
+## 8. 相空间视图
+
+`PhaseView` 只存 `cx, cy, zoom, grid, periodic, circle`，不持有 GL 资源。
+
+屏幕 → 世界：
+
+```text
+span = range / zoom
+fx = (sx + 0.5) / w - 0.5
+fy = (sy + 0.5) / h - 0.5
+wx = cx + fx * span
+wy = cy - fy * span
+```
+
+pick：
+
+```text
+cell = range / res
+ix = floor((wx - (-range/2)) / cell)
+iy = floor((wy - (-range/2)) / cell)
+periodic: ix = mod(ix, res), iy = mod(iy, res)
+否则 ix/iy 越界 -> 失败
+```
+
+滚轮以光标为中心：先取光标下的世界点 `(wx, wy)`，改 `zoom`，再反解
+`cx = wx - fx*span'`、`cy = wy + fy*span'`。左键拖动按像素位移改 `cx/cy`。
+视图被 clamp 到 `[-range, range]` 附近，避免完全丢出边界。
+
+叠加层顶点在 `phase_view.c` 生成，NDC + RGBA：
+
+- 网格步长自适应，保证屏幕间距 ≥ 8 px；每 `2π` 一条主格线（相对 0）；
+- 基础范围边框；
+- 选中圆圈：单元格中心，半径随 `cell_px` 变化但至少 6 px；周期视图下对相邻 tile 复制；
+- `grid=0`、`circle=0` 时不生成对应顶点，面板可关掉以看完整图像。
+
+显示 shader 的 uniform：`uCenter`、`uSpan`、`uRangeMin`、`uRange`、`uPeriodic`。
+uv 先按视图变换，再按场范围归一化；periodic 用 `fract`，非周期越界画背景色。
+场纹理 **NEAREST**，LUT 线性。
+
+### 8.1 低分辨率模糊的根因
+
+历史 bug：`gpu_set_res` 把场纹理的 `GL_TEXTURE_MIN_FILTER`/`MAG_FILTER` 都设成
+`GL_LINEAR`。64×64 放大到 700×700 时，一个纹素覆盖约 11×11 屏幕像素，双线性过滤在
+纹素边界附近混入邻居，看起来像糊的渐变；网格线还在，所以容易误判成网格/缩放问题。
+
+修复：场纹理（现代 R32F 与 legacy RGBA）统一 `GL_NEAREST`；LUT 保留 `GL_LINEAR`。
+LUT 的插值只影响同一格内的颜色值，而同一格只有一个场值，因此不会产生空间模糊。
+legacy 路径同样设为 NEAREST，64×64 的固定管线截图也保持方块边界。
+
+## 9. Tcl/Tk 控制面板与内嵌运行时
+
+### 9.1 面板
+
+`ui/panel.tcl`（RCDATA 1002）用 ttk/clam 画一个 364×540 的固定布局：标题、Pause/Reset/Quit、
+Kernel/Palette 下拉、Grid/Periodic/Circle、Reset view、Hot logic（Source/Reload）、状态三行、
+快捷键两行、Last。所有控件 `-takefocus 0`，动作后 `focus .` 把焦点还给面板根窗口；
+`bind . <KeyPress-...>` 提供与相空间相同的快捷键。
+
+C 注册三个 Tcl 命令：
+
+- `dp_action name ?value?` → `app_do_action`，返回 `last_action`；
+- `dp_status` → 返回偶数长度列表：paused/kernel/kernel_label/fps/res/scheme/grid/periodic/circle/
+  zoom/sel/source/last；
+- `dp_quit` → `app->quit=1` + `PostQuitMessage`。
+
+`panel_pump` 每帧最多处理 64 个 Tk 事件（`TCL_DONT_WAIT`），不阻塞 GL 循环。
+面板关闭（标题栏 ×）走 `WM_DELETE_WINDOW {dp_quit}`；Quit 按钮同路径。
+
+### 9.2 运行时打包
+
+工具链的 `libtcl86.a`/`libtk86.a` 是导入库，真正代码在 `C:\MinGW\bin\tcl86.dll`、
+`tk86.dll`，脚本在 `C:\MinGW\lib\tcl8.6`、`tk8.6`。为了不产生 DLL 依赖：
+
+```text
+DPTCL86\0            8 B magic
+u32 count
+repeat:
+  u16 path_len
+  path              相对路径，如 tcl8.6/init.tcl
+  u32 data_len
+  data
+```
+
+`build.ps1` 把 2 个 DLL + 979 个脚本文件（共 981）打成 `build/gen/tcltk.bin`，
+windres 以 RCDATA 1003 嵌进 exe。运行时：
+
+1. 先试 `%LOCALAPPDATA%\dp-phase\tcl86-8.6.0`；不可写则试
+   `%TEMP%\dp-phase-tcl86-8.6.0`；已有完整 key files 就跳过解包；
+2. 解包时校验 magic、路径（拒绝绝对路径/..）、逐文件建父目录；
+3. `SetEnvironmentVariable` + `_putenv` 设 `TCL_LIBRARY`/`TK_LIBRARY`
+   （MinGW 的 `getenv` 只认 CRT 环境，必须 `_putenv`）；
+4. `LoadLibraryEx(..., LOAD_WITH_ALTERED_SEARCH_PATH)` 加载 tcl86.dll/tk86.dll，
+   `GetProcAddress` 取 `Tcl_*`/`Tk_Init`，`Tcl_CreateInterp` → `Tcl_Init` → `Tk_Init`；
+5. 失败才回退 `C:\MinGW`（开发机兜底）。
+
+因此 exe 没有 tcl/tk 的导入项，`dist` 只有一个文件；解包目录是缓存，不是外部安装。
+
+## 10. 帧流水线与输入
+
+```text
+while !quit:
+    platform_pump
+    panel_pump
+    app_frame:
+        params = hot.params()
+        steps = hot.tick(dt)
+        sim_step/gpu_step
+        read selected cell
+        pendulum_view_set_state
+        app_render_phase
+        update title
+    vsync or 60Hz limiter
+```
+
+相空间输入：左键 down/up = 拖动，move = 平移，wheel = 缩放，右键 down = pick；
+键盘 R/Space/C/K 先走 `LuaHot.key`，G/P/O/0/F5/Esc 由 C 处理。面板动作直接调用
+`app_do_action`，不模拟按键。双摆窗口只转发键给 `app_key`。
+
+## 11. 回退矩阵
+
+| GPU 4.3 | 用户选择 | 结果 |
 | --- | --- | --- |
-| `defaults()` | 参数表 | 启动/重载 |
-| `palette()` | 3072 个 0..255 整数 | 启动/重载/切调色板 |
-| `params()` | `m1,m2,l1,l2,g,damping,dt,max_steps` | 每帧 |
-| `tick(dt)` | 本帧子步数 | 每帧 |
-| `key(name, down)` | `reset/pause/palette/kernel` 或 nil | 按键 |
-| `title(kernel, fps, steps)` | UTF-8 标题 | 每 0.25 s |
-| `reset()` | — | 网格重置后 |
+| 可用 | GPU | compute + R32F（默认） |
+| 可用 | CPU | 固定管线 + CPU 场 |
+| 不可用 | — | Fortran CPU + 固定管线 |
+| 不可用 | — | C 参考 RK4（自检/极端兜底） |
 
-宿主只暴露 `host.kernel() / host.res() / host.log(s) / host.time()`。
-Lua 状态只开 `base, table, string, math`，不开 `io/os/package/debug`。
+Lua 加载失败 → 使用编译期默认配置/调色板；Lua 重载失败 → 保留旧状态。
+Tk 运行时/脚本失败 → 只影响面板，相空间和双摆继续运行（错误写 `last_action`/调试输出）。
 
-### 7.2 步进策略
+## 12. 构建与资源
 
-`tick` 里是固定步长累加器：
+`build.ps1` 六步：打包 Tcl/Tk → 编译 shader → 编译 C（15 个对象）→ 编译 Fortran →
+windres（hot.lua 1001、panel.tcl 1002、tcltk.bin 1003、manifest、VERSIONINFO）→
+静态链接（`-static -static-libgcc`，gfortran 运行库静态）→ 导入表审计 → 可选自测。
 
-```lua
-M.acc = M.acc + dt
-local n = 0
-while M.acc >= step and n < cap do
-    M.acc = M.acc - step
-    n = n + 1
-end
-if M.acc > step then M.acc = 0 end   -- 跟不上了就丢弃欠账
-return n
-```
+## 13. 与原始单文件的差异
 
-CPU 回退时把每帧上限压到 4，避免一帧里堆出长停顿；GPU 用 8。
-所有上限在 C 侧还会再夹一次（0..32），脚本写错不会把进程带崩。
+| 方面 | 原始 | 现在 |
+| --- | --- | --- |
+| 窗口 | 一个窗口、右侧信息面板 | 相空间 / 双摆 / 控制面板三个顶层窗口 |
+| 信息面板 | C/raylib 画 | Tcl/Tk 面板 + 独立双摆 GDI 窗口 |
+| 相空间 | 固定视图 | 拖拽/缩放/周期/格线/选中圆圈 |
+| 过滤 | 双线性 | 场纹理 NEAREST，低分辨率锐利 |
+| 面板输入 | 键盘 | 面板控件覆盖全部功能，键盘只作快捷键 |
+| Tcl/Tk | 无 | 内嵌运行时 + 动态加载，仍单 exe |
+| 选中 | 无 | 右键像素 → 双摆窗口同步 |
 
-### 7.3 热重载
+## 14. 已知取舍
 
-`F5`：优先读 exe 同目录的 `hot.lua`，没有就读 RCDATA 里的副本。
-重载在**新的 `lua_State`** 里执行；失败时关闭新状态、保留旧状态。
-`host.*` 的 upvalue 指向稳定的 `LuaHot`，不随 `lua_State` 一起换掉。
-
-重载成功后：
-
-* 物理参数、`dt`、上限、调色板、按键、标题立即生效；
-* `res` / `range` / 初始角速度变化会重建 `Sim` 和 GPU 资源并重置；
-* 其余情况保留当前状态，等玩家按 `R`。
-
-## 8. 帧流水线
-
-```
-app_frame()
-  dt = platform_dt()                       // QPC，夹 0..0.25 s
-  params = lua.params(); steps = lua.tick(dt)
-  if steps > 0:
-      GPU:  gpu_step(steps)                // 一次 dispatch 跑完
-      CPU:  sim_step_cpu(steps)            // 线程池 + Fortran
-            gpu_upload_field() 或 legacy 上传
-  gpu_draw(w, h)
-  platform_frame_end()                     // SwapBuffers / 无 vsync 时 60 Hz 限速
-  fps / title 每 0.5 s / 0.25 s 更新
-```
-
-内核切换（`K`）：
-
-* GPU → CPU：`glGetBufferSubData` 取回状态，重算 field，再按显示路径上传；
-* CPU → GPU：把 CPU 状态 `glBufferSubData` 上去，dispatch 0 步刷新场纹理。
-
-正常帧不回读；只有切内核、`/shot`、`/gpu-selftest` 和 `/capture` 会回读。
-
-## 9. 回退矩阵
-
-| 环境 | 计算 | 显示 | 结果 |
-| --- | --- | --- | --- |
-| GL 4.3 core + compute 编译成功 | GLSL | 现代 shader | 默认，GPU |
-| 有 4.3 但强制 `/cpu` | Fortran | 现代 shader | CPU 计算，GPU 上屏 |
-| 没有 4.3 / `/legacy` | Fortran | GL 1.x 固定管线 + RGBA8 纹理 | 兼容 |
-| 只有 GL 1.1 软件渲染 | Fortran | 固定管线，纹理回退 `GL_CLAMP` | 最慢但能跑 |
-| `/gpu` 但没有 compute | — | — | 启动报错 |
-
-窗口本身是必须的（OpenGL 需要一个 drawable）；计算和显示都不可用时程序无法上屏，
-这属于 Windows 上没有可用 `opengl32` 的病态环境。
-
-## 10. 窗口与显示
-
-* 客户区正方形：取工作区短边 78%，夹在 480–1000；外框尺寸用 `AdjustWindowRectEx` 反算。
-* 不可缩放（`WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX`），保证始终正方形。
-* 清单：Per-Monitor V2 DPI + Win10 supportedOS + longPathAware；
-  `WM_DPICHANGED` 直接返回 0，不让系统把窗口改成非正方形。
-* `wglSwapIntervalEXT(1)` 开垂直同步；没有该扩展时用 QPC + `timeBeginPeriod(1)` 限到 60 Hz。
-* 标题栏：`Double Pendulum Phase Space | GPU compute | 144 fps | 256x256 | phase`，
-  由 Lua 的 `hot.title` 生成；暂停时显示 `phase | paused`。
-
-## 11. 构建与资源
-
-`build.ps1` 五步：
-
-1. 把 `shaders/*.glsl` 转义成 `build/gen/shaders_gen.h` 里的 C 字符串；
-2. `gcc` 编译 11 个 C 模块；
-3. `gfortran` 编译 `fortran/kernel.f90`；
-4. `windres` 编 `src/res/app.rc`：`1001 RCDATA "lua/hot.lua"`、DPI 清单、版本信息；
-5. `gfortran` 链接：
-
-```
--mwindows -static -static-libgcc -static-libgfortran
--Wl,--gc-sections -Wl,--enable-stdcall-fixup -s
--lopengl32 -lgdi32 -luser32 -lwinmm -llua -lm
-```
-
-链接后用 `objdump -p` 审计导入表，出现非系统 DLL 直接失败；随后跑 `/selftest`
-和 `/gpu-selftest`。
-
-## 12. 与原始单文件的差异
-
-| 原版 | 重构后 |
-| --- | --- |
-| 443 行单文件 C++ | 11 个 C 模块 + Fortran + GLSL + Lua + 资源 |
-| raylib 的窗口/纹理/文字 | Win32 + WGL + GLSL/PBO；无 raylib |
-| 左侧相空间 + 右侧双摆 + 右下数值 | 只有相空间 |
-| 1024×512 窗口 | 正方形客户区 |
-| 每帧 `std::thread` × 16 | 常驻线程池 + 行带 |
-| CPU 单线程逐格 RK4 + libm sin/cos | GLSL 默认；Fortran 查表 sincos + 和差化积 |
-| 逐格 `ColorFromHSV` | Lua 1024 项 LUT，CPU/GPU 共用 |
-| 编译期 `Configuration` | Lua 运行期配置，F5 热重载 |
-| 点采样放大 | GPU 线性过滤（现代路径） |
-| 无暂停/调色板/内核切换 | Space / C / K / F5 |
-
-## 13. 已知取舍
-
-* **32 位**：`C:\MinGW` 是 MinGW.org 的 i686 工具链，exe 是 PE32；
-  `-msse2` 是硬要求（任何 Windows 10 机器都满足）。
-* **GPU/CPU 数值分叉**：GPU float32、Fortran double；混沌系统下约 20 步后单格轨迹分叉。
-  大尺度结构（对角带、四瓣、颜色统计）一致，见验证记录。需要严格一致时用 `/cpu`。
-* **兼容路径滤波差异**：现代路径是“场纹理 + LUT”两段采样，兼容路径是“已着色 RGBA 纹理”一段采样；
-  512×512 下 22% 像素有平均 1.5/255 的差，视觉一致。
-* **CPU 回退的帧率**：256×256×1 步约 7–10 ms（8 线程），
-  按真实时间 10 步/秒推进；低核机器会更慢，但不会雪崩（累加器丢欠账）。
-* **没有屏幕文字**：按“只保留相空间”的要求，FPS/内核/调色板都放在标题栏。
-* **没有图标**：资源里只有清单、版本和 hot.lua；exe 用系统默认图标。
+- 面板第一次启动要解包约 7.8 MB；之后走缓存。
+- 面板高度按工作区 clamp；很矮的屏幕需要拉大窗口。
+- GPU/Fortran 舍入不同，极端像素不保证逐位一致。
+- legacy 固定管线功能完整，但没有现代路径的视图 uniform 性能。
+- 没有实现滚动/多显示器面板停靠；三个窗口是独立顶层窗口。
+- exe 未签名。

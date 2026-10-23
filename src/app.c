@@ -5,6 +5,8 @@
 #include "gpu.h"
 #include "lua_hot.h"
 #include "phase_view.h"
+#include "pendulum_view.h"
+#include "panel.h"
 #include "physics.h"
 #include "platform.h"
 #include "sim.h"
@@ -23,6 +25,10 @@ struct App {
     Gpu      *gpu;
     Sim      *sim;
     LuaHot   *lua;
+    PendulumView *pview;
+    Panel    *panel;
+    int      quit;
+    int      right_x, right_w, pend_h;
 
     DpConfig cfg;
     DpParams params;
@@ -60,6 +66,12 @@ struct App {
 
 static void app_reload(App *a);
 static void app_event(App *a, const DpEvent *ev);
+static void app_pend_close(void *user);
+static void app_pend_key(void *user, int vk, int down);
+static int  panel_action_cb(void *user, const char *name, const char *value,
+                            char *msg, size_t msgsz);
+static void panel_status_cb(void *user, PanelStatus *st);
+static void panel_quit_cb(void *user);
 static int  app_do_action(App *a, const char *name, const char *value);
 static void app_read_selected(App *a);
 static void app_render_phase(App *a);
@@ -94,11 +106,13 @@ static void app_error_box(App *a, const char *msg)
         }
     }
     app_set_last(a, msg ? msg : "error");
-    if (a->err_shown) return;
-    a->err_shown = 1;
-    if (!a->opt.headless) platform_message_box(msg, 1);
     OutputDebugStringA(msg);
     OutputDebugStringA("\n");
+    if (a->opt.headless || a->opt.capture_path) return;
+    if (a->panel) return;
+    if (a->err_shown) return;
+    a->err_shown = 1;
+    platform_message_box(msg, 1);
 }
 
 static void app_params_from_cfg(App *a)
@@ -432,6 +446,70 @@ static void app_event_cb(void *user, const DpEvent *ev)
     app_event((App *)user, ev);
 }
 
+static int panel_action_cb(void *user, const char *name, const char *value,
+                           char *msg, size_t msgsz)
+{
+    App *a = (App *)user;
+    int ok = app_do_action(a, name, value);
+    if (msg && msgsz) {
+        snprintf(msg, msgsz, "%s", a ? a->last_action : "");
+    }
+    return ok;
+}
+
+static void panel_status_cb(void *user, PanelStatus *st)
+{
+    App *a = (App *)user;
+    int paused = 0;
+    char scheme[32] = "phase";
+    char err[256];
+    if (!a || !st) return;
+    memset(st, 0, sizeof(*st));
+    st->zoom = 1.0;
+    st->kernel_gpu = (a->kernel == DP_KERNEL_GPU);
+    st->res = a->cfg.grid.res;
+    st->fps = (int)(a->fps + 0.5);
+    st->grid = a->view.grid;
+    st->periodic = a->view.periodic;
+    st->circle = a->view.circle;
+    st->selected = (a->selected >= 0);
+    st->sel_x = a->sel_x;
+    st->sel_y = a->sel_y;
+    st->zoom = a->view.zoom;
+    if (a->use_lua && a->lua) {
+        err[0] = 0;
+        if (!lua_hot_status(a->lua, &paused, scheme, sizeof(scheme), err, sizeof(err))) {
+            paused = a->paused;
+            strcpy(scheme, "phase");
+        }
+    } else {
+        paused = a->paused;
+    }
+    st->paused = paused;
+    strncpy(st->scheme, scheme, sizeof(st->scheme) - 1);
+    strncpy(st->source, a->hot_from_disk ? "hot.lua (disk override)" : "embedded (RCDATA)", sizeof(st->source) - 1);
+    strncpy(st->last, a->last_action, sizeof(st->last) - 1);
+}
+
+static void panel_quit_cb(void *user)
+{
+    App *a = (App *)user;
+    if (a) a->quit = 1;
+    PostQuitMessage(0);
+}
+
+static void app_pend_close(void *user)
+{
+    App *a = (App *)user;
+    if (a) a->quit = 1;
+    PostQuitMessage(0);
+}
+
+static void app_pend_key(void *user, int vk, int down)
+{
+    app_key((App *)user, vk, down);
+}
+
 void app_key(App *a, int vk, int down)
 {
     DpEvent ev;
@@ -630,6 +708,57 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
         platform_set_vsync(a->plat, gpu_vsync(a->gpu));
         gpu_set_res(a->gpu, a->cfg.grid.res);
         gpu_set_range(a->gpu, a->cfg.grid.range);
+
+        {
+            int side = platform_width(a->plat);
+            a->right_x = 16 + side + 24;
+            a->right_w = dp_clampi((int)(side * 0.52), 300, 380);
+            a->pend_h = dp_clampi((int)(side * 0.42), 220, 340);
+            a->pview = pendulum_view_create(inst, L"Double Pendulum",
+                                            a->right_x, 16, a->right_w, a->pend_h,
+                                            a, app_pend_close, app_pend_key);
+        }
+
+        {
+            const void *ui = NULL, *rt = NULL;
+            size_t ui_len = 0, rt_len = 0;
+            RECT work;
+            int panel_y, panel_h;
+            PanelCallbacks cb;
+            char panel_err[512];
+            platform_read_resource(1002, &ui, &ui_len);
+            platform_read_resource(1003, &rt, &rt_len);
+            SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+            panel_y = 16 + a->pend_h + 46;
+            panel_h = dp_clampi((int)(work.bottom - work.top) - panel_y - 16, 420, 540);
+            memset(&cb, 0, sizeof(cb));
+            cb.user = a;
+            cb.action = panel_action_cb;
+            cb.status = panel_status_cb;
+            cb.quit = panel_quit_cb;
+            panel_err[0] = 0;
+            a->panel = panel_create(&cb, (const char *)ui, ui_len, rt, rt_len,
+                                    a->right_x, panel_y, a->right_w, panel_h,
+                                    panel_err, sizeof(panel_err));
+            if (!a->panel) {
+                char logpath[MAX_PATH];
+                DWORD ln = GetTempPathA(MAX_PATH, logpath);
+                FILE *lf;
+                if (ln) {
+                    strncat(logpath, "dp-panel-error.txt", MAX_PATH - strlen(logpath) - 1);
+                    lf = fopen(logpath, "a");
+                    if (lf) {
+                        fprintf(lf, "panel failed: ui=%u rt=%u err=%s\n",
+                                (unsigned)ui_len, (unsigned)rt_len,
+                                panel_err[0] ? panel_err : "(no error)");
+                        fclose(lf);
+                    }
+                }
+                OutputDebugStringA("panel: ");
+                OutputDebugStringA(panel_err[0] ? panel_err : "create failed");
+                OutputDebugStringA("\n");
+            }
+        }
     }
 
     if (force_kernel == DP_KERNEL_GPU && !gpu_ok) {
@@ -665,6 +794,8 @@ void app_destroy(App *app)
 {
     App *a = app;
     if (!a) return;
+    if (a->panel) panel_destroy(a->panel);
+    if (a->pview) pendulum_view_destroy(a->pview);
     if (a->gpu) gpu_destroy(a->gpu);
     if (a->sim) sim_destroy(a->sim);
     if (a->lua) lua_hot_destroy(a->lua);
@@ -719,6 +850,11 @@ int app_frame(App *a)
     if (steps > 0) app_advance(a, steps);
     else a->steps_last = 0;
 
+    if (a->pview) {
+        pendulum_view_set_state(a->pview, a->sel_state, a->selected >= 0,
+                                a->sel_x, a->sel_y, &a->params);
+    }
+
     if (a->gpu) {
         app_render_phase(a);
         platform_frame_end(a->plat);
@@ -742,9 +878,10 @@ int app_frame(App *a)
 int app_loop(App *a)
 {
     if (!a) return 0;
-    while (!platform_quit(a->plat)) {
+    while (!a->quit && !platform_quit(a->plat)) {
         platform_pump(a->plat);
-        if (platform_quit(a->plat)) break;
+        if (a->panel) panel_pump(a->panel);
+        if (a->quit || platform_quit(a->plat)) break;
         app_frame(a);
     }
     return 0;

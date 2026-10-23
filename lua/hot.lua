@@ -17,13 +17,13 @@ M.cfg = {
         damping = 0.0,
     },
     grid = {
-        res = 256,
-        range = 4 * math.pi,
+        res = 64,
+        range = 2 * math.pi,
         omega1 = 0.0,
         omega2 = 0.0,
     },
     sim = {
-        dt = 0.1,
+        dt = 0.01,
         max_steps = 8,
         threads = 0,          -- 0 = 用满逻辑核
     },

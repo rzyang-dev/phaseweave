@@ -5,6 +5,7 @@
 #include "bmp.h"
 #include "gpu.h"
 #include "lua_hot.h"
+#include "phase_view.h"
 #include "physics.h"
 #include "platform.h"
 #include "sim.h"
@@ -86,6 +87,69 @@ static void test_angles(void)
     checkf(fabsf(dp_field_value((float)DP_PI, (float)DP_PI)) < 1e-5f, "field(pi,pi) = 0 (wrapped)");
     checkf(fabsf(dp_field_value((float)DP_TWO_PI, (float)DP_TWO_PI) - 0.5f) < 1e-5f, "field(2pi,2pi) = 0.5");
     checkf(fabsf(dp_field_value(NAN, 0.0f) - 0.5f) < 1e-6f, "field(NaN) falls back to 0.5");
+}
+
+static void test_view(void)
+{
+    PhaseView v;
+    const double range = 4.0 * DP_PI;
+    const int w = 800, h = 800, res = 64;
+    double wx, wy, zx, zy;
+    int cx, cy, grid_n = 0, total = 0;
+    float *verts = (float *)malloc(20000u * 6u * sizeof(float));
+    if (!verts) { check(0, "view test buffer"); return; }
+
+    printf("-- phase view math\n");
+    pv_init(&v);
+    check(fabs(pv_span(&v, range) - range) < 1e-9, "zoom 1 shows the whole range");
+    pv_screen_to_world(&v, range, w, h, w / 2, h / 2, &wx, &wy);
+    check(fabs(wx) < range / (double)w && fabs(wy) < range / (double)h,
+          "screen centre maps to world origin (within 1 px)");
+    check(pv_pick(&v, range, res, w, h, w / 2, h / 2, &cx, &cy) && cx == res / 2 && cy == res / 2,
+          "centre pick -> centre cell");
+    check(pv_pick(&v, range, res, w, h, 0, 0, &cx, &cy) && cx == 0 && cy == 0,
+          "top-left pick -> (0,0)");
+    check(pv_pick(&v, range, res, w, h, w - 1, h - 1, &cx, &cy) &&
+          cx == res - 1 && cy == res - 1, "bottom-right pick -> (res-1,res-1)");
+
+    pv_reset(&v);
+    pv_screen_to_world(&v, range, w, h, 620, 240, &wx, &wy);
+    pv_zoom_at(&v, range, w, h, 620, 240, 2.0);
+    pv_screen_to_world(&v, range, w, h, 620, 240, &zx, &zy);
+    check(fabs(wx - zx) < 1e-6 && fabs(wy - zy) < 1e-6,
+          "wheel zoom keeps the cursor world point fixed");
+
+    pv_reset(&v);
+    pv_pan(&v, range, w, h, 80, 0);
+    check(fabs(v.cx + 80.0 * range / (double)w) < 1e-9, "drag right moves the view left");
+
+    pv_reset(&v);
+    v.zoom = 0.25;
+    check(!pv_pick(&v, range, res, w, h, 0, 0, &cx, &cy),
+          "non-periodic view rejects a pick outside the field");
+    v.periodic = 1;
+    check(pv_pick(&v, range, res, w, h, 0, 0, &cx, &cy),
+          "periodic view wraps a pick outside the field");
+
+    pv_init(&v);
+    v.grid = 1;
+    v.circle = 1;
+    total = pv_build_overlay(&v, range, res, w, h, 10, 20, verts, 20000, &grid_n);
+    check(total > 0 && grid_n > 0 && total > grid_n, "grid + selection circle produce overlay vertices");
+    v.grid = 0;
+    v.circle = 0;
+    total = pv_build_overlay(&v, range, res, w, h, 10, 20, verts, 20000, &grid_n);
+    check(total == 0, "grid and circle off -> no overlay");
+    v.grid = 1;
+    v.circle = 0;
+    total = pv_build_overlay(&v, range, res, w, h, 10, 20, verts, 20000, &grid_n);
+    check(total > 0 && total == grid_n, "grid only -> grid vertices");
+    v.grid = 0;
+    v.circle = 1;
+    total = pv_build_overlay(&v, range, res, w, h, -1, -1, verts, 20000, &grid_n);
+    check(total == 0, "circle without a selection -> no overlay");
+
+    free(verts);
 }
 
 static void test_fortran(void)
@@ -234,6 +298,28 @@ static void test_lua(void)
         checkf(0, "hot.defaults: %s", err);
     }
 
+    {
+        int paused = 1;
+        char scheme[32] = "";
+        err[0] = 0;
+        if (lua_hot_status(h, &paused, scheme, sizeof(scheme), err, sizeof(err))) {
+            checkf(paused == 0 && strcmp(scheme, "phase") == 0,
+                   "hot.status -> running / phase (paused=%d scheme=%s)", paused, scheme);
+        } else {
+            checkf(0, "hot.status: %s", err);
+        }
+        if (lua_hot_set_scheme(h, "ember", err, sizeof(err))) {
+            paused = 1;
+            scheme[0] = 0;
+            lua_hot_status(h, &paused, scheme, sizeof(scheme), err, sizeof(err));
+            checkf(strcmp(scheme, "ember") == 0, "hot.set_scheme(ember) is reflected by status");
+        } else {
+            checkf(0, "hot.set_scheme(ember): %s", err);
+        }
+        check(!lua_hot_set_scheme(h, "nope", err, sizeof(err)), "unknown palette is rejected");
+        check(lua_hot_set_scheme(h, "phase", err, sizeof(err)), "palette restored to phase");
+    }
+
     if (lua_hot_palette(h, lut, err, sizeof(err))) {
         check(1, "hot.palette returns 3072 bytes");
         checkf(lut[512 * 3 + 0] < 90 && lut[512 * 3 + 1] > 200 && lut[512 * 3 + 2] > 200,
@@ -370,6 +456,7 @@ static void test_gpu(void)
     check(1, "OpenGL 4.3 core + compute shader compiled");
 
     gpu_set_res(g, 64);
+    check(gpu_field_filter(g) == GL_NEAREST, "field texture uses GL_NEAREST (sharp pixels)");
     {
         unsigned char lut[DP_LUT_N * 3];
         dp_phase_lut(lut);
@@ -483,6 +570,7 @@ int dp_selftest(int with_gpu)
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("\nDouble Pendulum Phase Space - selftest\n\n");
     test_angles();
+    test_view();
     test_fortran();
     test_timing();
     test_lua();
