@@ -125,6 +125,10 @@ grid .f.nb.view.exports.png -row 0 -column 0 -sticky ew -padx {0 3}
 grid .f.nb.view.exports.csv -row 0 -column 1 -sticky ew -padx {3 0}
 grid columnconfigure .f.nb.view.exports 0 -weight 1
 grid columnconfigure .f.nb.view.exports 1 -weight 1
+ttk::combobox .f.nb.view.exports.scale -state readonly -values {1x 2x 4x} -width 5 -takefocus 0
+grid .f.nb.view.exports.scale -row 0 -column 2 -sticky e -padx {4 0}
+grid columnconfigure .f.nb.view.exports 2 -weight 0
+bind .f.nb.view.exports.scale <<ComboboxSelected>> {act export_scale_set [string trimright [.f.nb.view.exports.scale get] x]}
 
 ttk::label .f.nb.view.hint -text "Mouse: drag=pan, wheel=zoom, right-click=pick. Keyboard: R Space C G P O 0 F5 Esc." -font DpSmall -foreground "#555" -wraplength 320 -justify left
 grid .f.nb.view.hint -row 10 -column 0 -columnspan 2 -sticky ew -pady {8 0}
@@ -311,6 +315,7 @@ proc update_ui {} {
         .f.nb.view.ch set $ch
         .f.nb.view.post set $post
         .f.nb.view.pal set $pal
+        if {[catch {set es [dp_query export]}] == 0} { .f.nb.view.exports.scale set "${es}x" }
         .f.stat.line3 configure -text "$ch  |  $post"
         catch {draw_colorbar}
     }

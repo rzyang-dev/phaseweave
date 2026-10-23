@@ -510,7 +510,7 @@ static void test_session(void)
     e.channel = 2;
     e.post = 2;
     strcpy(e.palette, "ember");
-    e.grid = 1; e.periodic = 1; e.circle = 0;
+    e.grid = 1; e.periodic = 1; e.circle = 0; e.export_scale = 2;
     pv_init(&v); v.cx = 0.1; v.cy = -0.2; v.zoom = 2.0;
     GetTempPathA(sizeof(dir), dir);
     snprintf(path, sizeof(path), "%sdp-session-test.dps", dir);
@@ -529,6 +529,7 @@ static void test_session(void)
           "session view/toggles roundtrip");
     check(s.selected == 1 && s.sel_x == 12 && s.sel_y == 13,
           "session selected cell roundtrip");
+    check(s.export_scale == 2, "session export scale roundtrip");
     DeleteFileA(path);
 }
 

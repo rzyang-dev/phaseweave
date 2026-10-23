@@ -206,6 +206,11 @@ Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
 - custom 模型需要当前 Lua 仍定义它；GPU 后端请求失败自动回退 CPU。
 - 自检覆盖 save/load roundtrip；CLI save→load 的离屏图 hash 一致。
 
+## 10b. 导出偏好
+
+PNG 支持 1x/2x/4x 最近邻放大；CSV 在 ftle 模式追加 ftle 列；`export_scale` 存入 .dps。
+导出路径仍固定到 exe 旁 exports/。
+
 ## 10c. FTLE 分析
 
 View=ftle：每个 cell 以初始 state 为 base，扰动 state[0]，双轨积分 steps，
@@ -250,7 +255,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 25 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.9 MB，exe 约 432 KB。
+zip 约 3.9 MB，exe 约 433 KB。
 
 ## 13. 物理与数值边界
 
@@ -280,6 +285,7 @@ zip 约 3.9 MB，exe 约 432 KB。
 - M7b（进行中）：控制流与 ODE 表达式已进 CPU+GLSL；
 - M8（已完成）：全模型 GPU + 地图数字刻度 + 轴名直绘；
 - M9（已完成）：会话选中格 + `recent.txt`/`last-session.txt` 最近实验；
-- M10（进行中）：FTLE 分析已完成；后续盆地/导出偏好。
+- M10（已完成）：FTLE + 导出缩放；
+- M11（进行中）：盆地/逃逸时间、更多分析。
 - M8：地图轴刻度、更多会话状态、FTLE/盆地/切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。

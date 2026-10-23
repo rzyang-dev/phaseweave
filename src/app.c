@@ -463,13 +463,31 @@ static int app_export_path(App *a, const char *ext, char *out, size_t outsz)
 static int app_export_png(App *a)
 {
     char path[MAX_PATH], err[256];
+    int res, scale, x, y, dx, dy;
+    const unsigned char *src;
+    unsigned char *big = NULL;
     if (!a || !a->atlas) { app_set_last(a, "export: no atlas"); return 0; }
     if (!app_export_path(a, "png", path, sizeof(path))) return 0;
-    if (!png_write_rgba(path, atlas_rgba(a->atlas), atlas_res(a->atlas),
-                        atlas_res(a->atlas), err, sizeof(err))) {
+    res = atlas_res(a->atlas);
+    scale = dp_clampi(a->exp.export_scale, 1, 4);
+    src = atlas_rgba(a->atlas);
+    if (scale > 1) {
+        big = (unsigned char *)malloc((size_t)res * scale * res * scale * 4u);
+        if (!big) { app_set_last(a, "export: out of memory"); return 0; }
+        for (y = 0; y < res * scale; ++y)
+            for (x = 0; x < res * scale; ++x) {
+                dx = x / scale; dy = y / scale;
+                memcpy(big + ((size_t)y * res * scale + x) * 4u,
+                       src + ((size_t)dy * res + dx) * 4u, 4u);
+            }
+        src = big;
+    }
+    if (!png_write_rgba(path, src, res * scale, res * scale, err, sizeof(err))) {
+        free(big);
         app_set_last(a, err);
         return 0;
     }
+    free(big);
     app_set_last(a, path);
     return 1;
 }
@@ -488,6 +506,7 @@ static int app_export_csv(App *a)
     for (i = 0; i < a->exp.mdl->state_dim && i < MODEL_MAX_STATE; ++i)
         if (a->exp.mdl->state_names[i]) fprintf(f, ",state_%s", a->exp.mdl->state_names[i]);
     for (i = 0; i < a->exp.nch; ++i) fprintf(f, ",ch_%s", exp_channel_name(&a->exp, i));
+    if (a->exp.post == 4) fprintf(f, ",ftle");
     fprintf(f, "\n");
     for (y = 0; y < atlas_res(a->atlas); ++y) {
         for (x = 0; x < atlas_res(a->atlas); ++x) {
@@ -501,6 +520,8 @@ static int app_export_csv(App *a)
             for (i = 0; i < a->exp.mdl->state_dim && i < MODEL_MAX_STATE; ++i)
                 if (a->exp.mdl->state_names[i]) fprintf(f, ",%.9g", (double)st[i]);
             for (i = 0; i < a->exp.nch; ++i) fprintf(f, ",%.9g", (double)ch[i]);
+            if (a->exp.post == 4 && atlas_analysis_data(a->atlas))
+                fprintf(f, ",%.9g", (double)atlas_analysis_data(a->atlas)[idx]);
             fprintf(f, "\n");
         }
     }
@@ -646,6 +667,7 @@ static int app_load_session(App *a, const char *path)
     else if (strcmp(s.post, "range") == 0) a->exp.post = 2;
     else if (strcmp(s.post, "variance") == 0) a->exp.post = 3;
     else if (strcmp(s.post, "ftle") == 0) a->exp.post = 4;
+    a->exp.export_scale = dp_clampi(s.export_scale, 1, 4);
     if (s.palette[0]) strncpy(a->exp.palette, s.palette, sizeof(a->exp.palette) - 1);
     if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, a->exp.palette, NULL, 0);
     a->selected = -1;
@@ -899,6 +921,12 @@ static int app_do_action(App *a, const char *name, const char *value)
     }
     if (strcmp(name, "save_experiment") == 0) { app_dialog_save(a); return 1; }
     if (strcmp(name, "load_experiment") == 0) { app_dialog_load(a); return 1; }
+    if (strcmp(name, "export_scale_set") == 0 && value) {
+        int s = atoi(value);
+        a->exp.export_scale = dp_clampi(s, 1, 4);
+        app_set_last(a, "PNG scale changed");
+        return 1;
+    }
     if (strcmp(name, "export_png") == 0) { app_export_png(a); return 1; }
     if (strcmp(name, "export_csv") == 0) { app_export_csv(a); return 1; }
     if (strcmp(name, "apply") == 0) { app_apply_experiment(a); return 1; }
@@ -1077,6 +1105,8 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
             n += snprintf(out + n, outsz - n, "  %s = %.6g %s\n",
                           ci.label, a->sel_ch[k], ci.unit);
         }
+    } else if (strcmp(what, "export") == 0) {
+        append_list(out, outsz, "%d", a->exp.export_scale);
     } else if (strcmp(what, "postrange") == 0) {
         double lo = 0.0, hi = 1.0;
         atlas_post_range(a->atlas, &lo, &hi);

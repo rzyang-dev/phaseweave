@@ -46,8 +46,8 @@ int session_save(const char *path, const Experiment *e, const PhaseView *v,
     fprintf(f, "backend=%s\n", backend_gpu ? "gpu" : "cpu");
     fprintf(f, "view_cx=%.17g\nview_cy=%.17g\nview_zoom=%.17g\n",
             v->cx, v->cy, v->zoom);
-    fprintf(f, "selected=%d\nsel_x=%d\nsel_y=%d\n",
-            selected ? 1 : 0, sel_x, sel_y);
+    fprintf(f, "selected=%d\nsel_x=%d\nsel_y=%d\nexport_scale=%d\n",
+            selected ? 1 : 0, sel_x, sel_y, e->export_scale);
     for (i = 0; i < e->np; ++i)
         fprintf(f, "param.%s=%.17g\n", e->p[i].name, e->p[i].value);
     fclose(f);
@@ -62,7 +62,7 @@ int session_load(const char *path, SessionData *s, char *err, size_t errsz)
     if (err && errsz) err[0] = 0;
     if (!path || !s) return 0;
     memset(s, 0, sizeof(*s));
-    s->res = 64; s->dt = 0.01; s->steps = 8;
+    s->res = 64; s->dt = 0.01; s->steps = 8; s->export_scale = 1;
     s->view_zoom = 1.0;
     strcpy(s->post, "raw");
     strcpy(s->palette, "phase");
@@ -101,6 +101,7 @@ int session_load(const char *path, SessionData *s, char *err, size_t errsz)
         else if (strcmp(k, "selected") == 0) s->selected = boolv(v);
         else if (strcmp(k, "sel_x") == 0) s->sel_x = atoi(v);
         else if (strcmp(k, "sel_y") == 0) s->sel_y = atoi(v);
+        else if (strcmp(k, "export_scale") == 0) s->export_scale = atoi(v);
         else if (strncmp(k, "param.", 6) == 0 && s->nparams < MODEL_MAX_PARAMS) {
             strncpy(s->params[s->nparams].name, k + 6, sizeof(s->params[s->nparams].name) - 1);
             s->params[s->nparams].value = atof(v);
@@ -115,6 +116,7 @@ int session_load(const char *path, SessionData *s, char *err, size_t errsz)
     if (s->xmax <= s->xmin) { s->xmin = 0; s->xmax = 1; }
     if (s->ymax <= s->ymin) { s->ymin = 0; s->ymax = 1; }
     if (s->view_zoom < 0.25) s->view_zoom = 1.0;
+    if (s->export_scale != 2 && s->export_scale != 4) s->export_scale = 1;
     if (s->sel_x < 0 || s->sel_x >= s->res || s->sel_y < 0 || s->sel_y >= s->res)
         s->selected = 0;
     return 1;

@@ -50,6 +50,7 @@ void exp_init(Experiment *e, const Model *m)
     e->res = 64;
     e->dt = 0.01;
     e->max_steps = 8;
+    e->export_scale = 1;
     e->channel = 0;
     e->post = 0;
     e->grid = 1;

@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (25 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (432,128 bytes)
+OK -> dist/dp-phase/dp-phase.exe (432,640 bytes)
       staged 10.2 MB
-      dist/dp-phase-1.19.0.zip (4.0 MB)
+      dist/dp-phase-1.20.0.zip (4.1 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 432,128 B |
+| exe | 432,640 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -54,10 +54,10 @@ OK -> dist/dp-phase/dp-phase.exe (432,128 bytes)
   [ok]   session load
   [ok]   session axes/ranges roundtrip
   [ok]   session integration roundtrip
-selftest: 121 passed, 0 failed
+selftest: 122 passed, 0 failed
 ```
 
-`/gpu-selftest`：**153/153**（121 CPU + 旧 GPU + 表达式/ODE/GPU atlas/FTLE 回归）。
+`/gpu-selftest`：**154/154**（122 CPU + 旧 GPU + 表达式/ODE/GPU atlas/FTLE 回归）。
 GUI 默认采样 CPU；View 的 Kernel=GPU 可启用全模型 GPU atlas（读回后再 CPU colorize/显示）。
 
 ## 3. 双摆三窗口
@@ -201,7 +201,7 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
   [ok]   GPU custom dispatch
   [ok]   GPU custom state matches CPU
   [ok]   GPU custom channels match CPU
-selftest: 153 passed, 0 failed
+selftest: 154 passed, 0 failed
 ```
 
 测试用单格 10 步 + 8×8 atlas 2 步 Hénon 表达式；单格容差 1e-5，atlas 2 步逐值一致。

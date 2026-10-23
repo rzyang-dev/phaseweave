@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.19.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.20.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -177,6 +177,15 @@ param.r=3.7
 
 ![Script 页](docs/shot-panel-script.png)
 
+## 导出偏好
+
+- PNG 导出分辨率可选 **1x/2x/4x**，最近邻放大，不重新采样模型；
+- 导出仍写到 `<exe>\exports\atlas-YYYYMMDD-HHMMSS.png/.csv`；
+- CSV 在 `post=ftle` 时追加 `ftle` 列；
+- 偏好保存在 `.dps` 的 `export_scale`。
+
+![导出缩放](docs/shot-export.png)
+
 ## FTLE / 有限时间拉伸
 
 View 下拉的 **ftle** 对每个初始 cell 做：
@@ -211,7 +220,7 @@ FTLE 在 atlas reset 后缓存，参数/轴变化才重算；播放时不会每�
 
 ![模型面板](docs/shot-panel.png)
 
-**View**：Model、Color by、View（raw/gradient/range/variance/**ftle**）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV。地图边缘有数字刻度（min/mid/max），顶部直接画 X/Y 轴名；范围在面板读数里。
+**View**：Model、Color by、View（raw/gradient/range/variance/**ftle**）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV；PNG 旁边的 `1x/2x/4x` 控制最近邻放大，CSV 在 ftle 模式多一列 `ftle`。地图边缘有数字刻度（min/mid/max），顶部直接画 X/Y 轴名；范围在面板读数里。
 
 **Parameters**：X/Y 轴、范围、Res、dt、Steps/frame、模型参数、Apply parameters。
 面板高度按屏幕自适应（1080p 下 620 客户区），双摆 10 个参数能完整显示。
@@ -302,13 +311,13 @@ src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 121 项；含 GPU 的 153 项
+src/selftest.c      CPU 122 项；含 GPU 的 154 项
 ```
 
 ## 验证
 
-- `/selftest`：**121/121**
-- `/gpu-selftest`：**153/153**
+- `/selftest`：**122/122**
+- `/gpu-selftest`：**154/154**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
@@ -319,10 +328,10 @@ src/selftest.c      CPU 121 项；含 GPU 的 153 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出仍固定到 exe 旁 exports/。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE 已完成；还缺盆地/导出偏好；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出缩放已完成；还缺盆地/逃逸时间；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.19.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.20.0.zip`
