@@ -1,6 +1,8 @@
 /* experiment.c - double-pendulum experiment schema and axis mapping */
 #include "experiment.h"
 
+#include "model_dp.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -116,19 +118,24 @@ void exp_axis_values(const Experiment *e, int ix, int iy, double vals[EXP_MAX_PA
 
 void exp_cell_state(const Experiment *e, int ix, int iy, double state[4], double params[6])
 {
+    DpModelValues v;
     double vals[EXP_MAX_PARAMS];
     if (!e || !state || !params) return;
     exp_axis_values(e, ix, iy, vals);
-    state[0] = vals[exp_index(e, "theta1")];
-    state[1] = vals[exp_index(e, "theta2")];
-    state[2] = vals[exp_index(e, "omega1")];
-    state[3] = vals[exp_index(e, "omega2")];
-    params[0] = vals[exp_index(e, "m1")];
-    params[1] = vals[exp_index(e, "m2")];
-    params[2] = vals[exp_index(e, "l1")];
-    params[3] = vals[exp_index(e, "l2")];
-    params[4] = vals[exp_index(e, "g")];
-    params[5] = vals[exp_index(e, "damping")];
+    v.theta1 = vals[exp_index(e, "theta1")];
+    v.theta2 = vals[exp_index(e, "theta2")];
+    v.omega1 = vals[exp_index(e, "omega1")];
+    v.omega2 = vals[exp_index(e, "omega2")];
+    v.m1 = vals[exp_index(e, "m1")];
+    v.m2 = vals[exp_index(e, "m2")];
+    v.l1 = vals[exp_index(e, "l1")];
+    v.l2 = vals[exp_index(e, "l2")];
+    v.g = vals[exp_index(e, "g")];
+    v.damping = vals[exp_index(e, "damping")];
+    model_dp_state(&v, state);
+    params[0] = v.m1; params[1] = v.m2;
+    params[2] = v.l1; params[3] = v.l2;
+    params[4] = v.g; params[5] = v.damping;
 }
 
 const char *exp_channel_name(int ch)

@@ -8,7 +8,7 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [1/6] checking Tcl/Tk runtime
 [2/6] embedding shaders (field, display, line, atlas)
-[3/6] compiling C skeleton (16 objects)
+[3/6] compiling C skeleton (17 objects)
 [4/6] compiling Fortran kernel
 [5/6] compiling resources
 [6/6] linking (dynamic Tcl/Tk, static Lua/Fortran)

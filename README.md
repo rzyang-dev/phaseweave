@@ -157,7 +157,8 @@ AUTO/MatCont 式的连续化工具。
 
 ```text
 src/experiment.c/h   参数 schema、轴选择、范围、通道元数据
-src/atlas.c/h        每像素 state+params、RK4 采样、通道、后处理、RGBA
+src/model_dp.c/h     双摆示例模型：初值、RK4、能量、通道
+src/atlas.c/h        每像素 state+params、调用模型、通道、后处理、RGBA
 src/app.c            窗口/帧循环/面板命令/选择/预设
 src/gpu.c            OpenGL 4.3 上下文、atlas RGBA 显示、线叠加
 src/phase_view.c     归一化 [0,1] 视图、pick、平移/缩放、格线/圆圈

@@ -67,7 +67,13 @@ y = ymin + v*(ymax-ymin)
 角度轴是周期量，但“轴的范围”是用户选的；周期视图只是把归一化 [0,1] 视图平铺，
 并不改变参数范围。
 
-## 4. 通道
+## 4. 双摆模型层
+
+`model_dp.c/h` 提供 `DpModelValues`、`model_dp_state/step/channels/energy`；
+`experiment.c` 只负责把面板参数映射成 `DpModelValues`，`atlas.c` 只负责逐像素调用模型、
+存通道和颜色。这样增加第二个模型时不需要改 UI/视图/显示。
+
+## 5. 通道
 
 `Atlas` 每格存：
 
@@ -97,7 +103,7 @@ E  = KE + PE
 能量对 m1/m2 是线性的，所以它的 3×3 局部极差是常数，敏感性视图更适合 `omega_max` /
 最终角度；这也是 mass 预设使用 `omega_max + range` 的原因。
 
-## 5. 采样与线程
+## 6. 采样与线程
 
 - `Atlas` 用固定线程池按行带并行（复用 `pool.c`）；
 - 每格参数不同，所以不再使用 Fortran 的“统一参数行带”内核；
@@ -105,7 +111,7 @@ E  = KE + PE
 - 500 步 64×64 离线渲染几十毫秒；
 - 256×256 仍可算，但 CPU 成本约 16 倍；GPU compute 是下一阶段。
 
-## 6. 视图与后处理
+## 7. 视图与后处理
 
 视图坐标统一成归一化 [0,1]：
 
@@ -126,14 +132,14 @@ E  = KE + PE
 gradient/range/variance 先在两遍中求当前画面 min/max，再映射到 [0,1]，避免固定缩放
 导致整幅图过暗或饱和。角度通道的差分使用 wrap_diff，避免 ±π 接缝产生假边缘。
 
-## 7. 显示
+## 8. 显示
 
 - GUI 的 display 是 **RGBA8 纹理 + atlas.frag**：CPU 已算好颜色，GPU 只做归一化视图采样；
 - 这样 CPU/GPU 两条路径颜色一致，也避开了 GUI GPU compute 的多通道参数映射；
 - 旧 `gpu.c` 的 compute/display/line 路径保留给 `/gpu-selftest` 和旧回归；
 - 叠加层仍是线着色器（现代）或固定管线（legacy），格线/选中圆圈用归一化坐标。
 
-## 8. 面板
+## 9. 面板
 
 `ui/panel.tcl` 分三页：
 
@@ -152,7 +158,7 @@ C 注册：
 参数编辑走 `param_set`，只在 Apply 时重建；轴切换立即重建并重置。Reload 只重读
 调色板脚本，不重置参数。
 
-## 9. Lua
+## 10. Lua
 
 当前 `experiments/double-pendulum.lua` 只负责：
 
@@ -164,13 +170,13 @@ C 注册：
 参数 schema 暂时在 C 的 `experiment.c`。下一步把 schema 移到 Lua，并让 Lua 用表达式
 描述模型/观测量；表达式需要解析 + GLSL 代码生成，不能每像素解释 Lua。
 
-## 10. 打包
+## 11. 打包
 
 `build.ps1`：
 
 1. 检查 `tcl86.dll`、`tk86.dll`、`libgcc_s_dw2-1.dll`、`zlib1.dll`、脚本树；
 2. 编译内嵌 shader（含 atlas.frag）；
-3. 编译 C（16 个对象）；
+3. 编译 C（17 个对象）；
 4. 编译 Fortran 参考内核；
 5. windres；
 6. 链接：Tcl/Tk 动态，Lua/Fortran 静态；staging；zip。
@@ -184,7 +190,7 @@ TK_LIBRARY  = <exe_dir>\lib\tk8.6
 
 `Tcl_FindExecutable(exe)` + `Tcl_Init` + `Tk_Init`；不再解包、不写 LOCALAPPDATA。
 
-## 11. 物理与数值边界
+## 12. 物理与数值边界
 
 保留的旧内核：
 
@@ -202,7 +208,7 @@ TK_LIBRARY  = <exe_dir>\lib\tk8.6
 - 无 GPU compute atlas；
 - 3D 切片未做。
 
-## 12. 路线
+## 13. 路线
 
 - M3：logistic/Hénon 第二个模型，验证 model/experiment 解耦；
 - M4：Lua schema + 表达式模型 → GLSL 代码生成 + CPU 回退；

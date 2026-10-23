@@ -109,7 +109,7 @@ $cflags = @(
     '-I', 'src', '-I', 'build\gen'
 )
 $sources = @(
-    'main.c', 'app.c', 'platform.c', 'experiment.c', 'atlas.c', 'sim.c', 'physics.c', 'pool.c',
+    'main.c', 'app.c', 'platform.c', 'experiment.c', 'atlas.c', 'model_dp.c', 'sim.c', 'physics.c', 'pool.c',
     'kernel_fortran.c', 'lua_hot.c', 'gpu.c', 'phase_view.c', 'pendulum_view.c', 'panel.c', 'bmp.c', 'selftest.c'
 )
 $objects = @()

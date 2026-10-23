@@ -3,6 +3,7 @@
  *  a compute-shader backend can be added behind the same channels contract. */
 #include "atlas.h"
 
+#include "model_dp.h"
 #include "physics.h"
 #include "pool.h"
 
@@ -113,46 +114,32 @@ void atlas_reset(Atlas *a, const Experiment *e)
     atlas_step(a, e, 0);
 }
 
-static double cell_energy(const float *c)
-{
-    double t1 = c[0], t2 = c[1], w1 = c[2], w2 = c[3];
-    double m1 = c[4], m2 = c[5], l1 = c[6], l2 = c[7], g = c[8];
-    double ke = 0.5 * (m1 + m2) * l1 * l1 * w1 * w1
-              + 0.5 * m2 * l2 * l2 * w2 * w2
-              + m2 * l1 * l2 * w1 * w2 * cos(t1 - t2);
-    double pe = -(m1 + m2) * g * l1 * cos(t1) - m2 * g * l2 * cos(t2);
-    return ke + pe;
-}
-
 static void atlas_band(void *user, int y0, int y1)
 {
     AtlasJob *job = (AtlasJob *)user;
     Atlas *a = job->a;
     const Experiment *e = job->e;
-    int x, y, s;
+    int x, y;
     for (y = y0; y < y1; ++y) {
         for (x = 0; x < a->res; ++x) {
             int i = y * a->res + x;
             float *c = a->cells_data + (size_t)i * 10u;
             double state[4];
-            DpParams p;
+            DpModelValues v;
+            float ch[4];
             state[0] = c[0]; state[1] = c[1]; state[2] = c[2]; state[3] = c[3];
-            p.m1 = c[4]; p.m2 = c[5]; p.l1 = c[6]; p.l2 = c[7];
-            p.g = c[8]; p.damping = c[9]; p.dt = e->dt > 0.0 ? e->dt : 0.01;
-            for (s = 0; s < job->steps; ++s) {
-                dp_rk4_step(state, &p);
-                if (!(state[0] == state[0]) || !(state[1] == state[1]) ||
-                    !(state[2] == state[2]) || !(state[3] == state[3])) {
-                    state[0] = state[1] = state[2] = state[3] = 0.0;
-                }
-            }
+            v.m1 = c[4]; v.m2 = c[5]; v.l1 = c[6]; v.l2 = c[7];
+            v.g = c[8]; v.damping = c[9];
+            v.theta1 = state[0]; v.theta2 = state[1]; v.omega1 = state[2]; v.omega2 = state[3];
+            model_dp_step(state, &v, e->dt, job->steps);
             c[0] = (float)state[0]; c[1] = (float)state[1];
             c[2] = (float)state[2]; c[3] = (float)state[3];
-            a->channels[(size_t)i * EXP_NCH + 0] = (float)state[0];
-            a->channels[(size_t)i * EXP_NCH + 1] = (float)state[1];
-            a->channels[(size_t)i * EXP_NCH + 2] = (float)cell_energy(c);
-            a->channels[(size_t)i * EXP_NCH + 3] =
-                (float)(fabs(state[2]) > fabs(state[3]) ? fabs(state[2]) : fabs(state[3]));
+            v.theta1 = state[0]; v.theta2 = state[1]; v.omega1 = state[2]; v.omega2 = state[3];
+            model_dp_channels(state, &v, ch);
+            a->channels[(size_t)i * EXP_NCH + 0] = ch[0];
+            a->channels[(size_t)i * EXP_NCH + 1] = ch[1];
+            a->channels[(size_t)i * EXP_NCH + 2] = ch[2];
+            a->channels[(size_t)i * EXP_NCH + 3] = ch[3];
         }
     }
 }
