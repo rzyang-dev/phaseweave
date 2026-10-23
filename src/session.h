@@ -24,13 +24,15 @@ typedef struct {
     char palette[32];
     int grid, periodic, circle;
     int backend_gpu;
+    int selected, sel_x, sel_y;
     double view_cx, view_cy, view_zoom;
     int nparams;
     SessionParam params[MODEL_MAX_PARAMS];
 } SessionData;
 
 int session_save(const char *path, const Experiment *e, const PhaseView *v,
-                 int backend_gpu, char *err, size_t errsz);
+                 int backend_gpu, int selected, int sel_x, int sel_y,
+                 char *err, size_t errsz);
 int session_load(const char *path, SessionData *s, char *err, size_t errsz);
 
 #endif

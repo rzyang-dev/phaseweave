@@ -514,7 +514,7 @@ static void test_session(void)
     pv_init(&v); v.cx = 0.1; v.cy = -0.2; v.zoom = 2.0;
     GetTempPathA(sizeof(dir), dir);
     snprintf(path, sizeof(path), "%sdp-session-test.dps", dir);
-    check(session_save(path, &e, &v, 1, err, sizeof(err)) == 1, "session save");
+    check(session_save(path, &e, &v, 1, 1, 12, 13, err, sizeof(err)) == 1, "session save");
     check(session_load(path, &s, err, sizeof(err)) == 1, "session load");
     check(strcmp(s.model, "double_pendulum") == 0 && s.backend_gpu == 1,
           "session model/backend roundtrip");
@@ -527,6 +527,8 @@ static void test_session(void)
     check(s.periodic == 1 && s.circle == 0 &&
           fabs(s.view_cx - 0.1) < 1e-12 && fabs(s.view_zoom - 2.0) < 1e-12,
           "session view/toggles roundtrip");
+    check(s.selected == 1 && s.sel_x == 12 && s.sel_y == 13,
+          "session selected cell roundtrip");
     DeleteFileA(path);
 }
 

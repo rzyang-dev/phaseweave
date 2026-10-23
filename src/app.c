@@ -73,6 +73,7 @@ struct App {
     unsigned char lut[DP_LUT_N * 3];
     char     hot_path[MAX_PATH];
     char     title[512];
+    char     last_session[MAX_PATH];
     float   *overlay;
     int      overlay_cap;
 };
@@ -507,16 +508,51 @@ static int app_export_csv(App *a)
 }
 
 
+static void app_remember_session(App *a, const char *path)
+{
+    char dir[MAX_PATH], cfg[MAX_PATH];
+    FILE *f;
+    if (!a || !path) return;
+    strncpy(a->last_session, path, sizeof(a->last_session) - 1);
+    a->last_session[sizeof(a->last_session) - 1] = 0;
+    platform_exe_dir(dir, sizeof(dir));
+    snprintf(cfg, sizeof(cfg), "%s\\last-session.txt", dir);
+    f = fopen(cfg, "wb");
+    if (f) {
+        fprintf(f, "%s\n", path);
+        fclose(f);
+    }
+}
+
+static void app_read_recent(App *a)
+{
+    char dir[MAX_PATH], cfg[MAX_PATH], buf[MAX_PATH];
+    FILE *f;
+    if (!a) return;
+    platform_exe_dir(dir, sizeof(dir));
+    snprintf(cfg, sizeof(cfg), "%s\\last-session.txt", dir);
+    f = fopen(cfg, "rb");
+    if (!f) return;
+    if (fgets(buf, sizeof(buf), f)) {
+        size_t n = strlen(buf);
+        while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r')) buf[--n] = 0;
+        if (buf[0]) strncpy(a->last_session, buf, sizeof(a->last_session) - 1);
+    }
+    fclose(f);
+}
+
 static int app_save_session(App *a, const char *path)
 {
     char err[512];
     if (!a || !path) return 0;
     err[0] = 0;
-    if (!session_save(path, &a->exp, &a->view, a->backend_gpu, err, sizeof(err))) {
+    if (!session_save(path, &a->exp, &a->view, a->backend_gpu,
+                      a->selected, a->sel_x, a->sel_y, err, sizeof(err))) {
         app_set_last(a, err[0] ? err : "save failed");
         return 0;
     }
     app_set_last(a, path);
+    app_remember_session(a, path);
     return 1;
 }
 
@@ -584,6 +620,12 @@ static int app_load_session(App *a, const char *path)
     if (a->atlas) atlas_destroy(a->atlas);
     a->atlas = atlas_create(&a->exp, a->exp.res, err, sizeof(err));
     if (!a->atlas) { app_set_last(a, err[0] ? err : "atlas creation failed"); return 0; }
+    if (s.selected && s.sel_x >= 0 && s.sel_x < a->exp.res &&
+        s.sel_y >= 0 && s.sel_y < a->exp.res) {
+        a->selected = 1;
+        a->sel_x = s.sel_x;
+        a->sel_y = s.sel_y;
+    }
     {
         int want_gpu = s.backend_gpu;
         a->backend_gpu = 0;
@@ -603,6 +645,7 @@ static int app_load_session(App *a, const char *path)
     }
     app_set_title(a, 1);
     app_set_last(a, path);
+    app_remember_session(a, path);
     return 1;
 }
 
@@ -806,6 +849,11 @@ static int app_do_action(App *a, const char *name, const char *value)
             app_set_last(a, "backend CPU");
         }
         app_set_title(a, 1);
+        return 1;
+    }
+    if (strcmp(name, "reload_last_session") == 0) {
+        if (!a->last_session[0]) { app_set_last(a, "no recent session in this run"); return 1; }
+        app_load_session(a, a->last_session);
         return 1;
     }
     if (strcmp(name, "save_experiment") == 0) { app_dialog_save(a); return 1; }
@@ -1061,6 +1109,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
 
     if (err && errsz) err[0] = 0;
     a = (App *)calloc(1, sizeof(App));
+    app_read_recent(a);
     if (!a) { if (err) snprintf(err, errsz, "app: out of memory"); return NULL; }
     a->inst = inst;
     a->opt = *opt;

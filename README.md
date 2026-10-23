@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.16.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.17.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -136,7 +136,7 @@ GLSL 的条件必须是 bool（比较/逻辑结果），CPU 仍接受数值真�
 
 ## 实验保存 / 加载（M7a）
 
-Script 页新增 **Save experiment / Load experiment**，使用 Windows 原生文件对话框，
+Script 页新增 **Save experiment / Load experiment / Load last experiment**，使用 Windows 原生文件对话框，
 扩展名 `.dps`。保存内容：
 
 - 模型 id、轴名、轴范围；
@@ -144,7 +144,8 @@ Script 页新增 **Save experiment / Load experiment**，使用 Windows 原生�
 - res/dt/steps、通道、后处理、palette；
 - Grid/Periodic/Circle；
 - CPU/GPU 后端；
-- 视图中心/zoom。
+- 视图中心/zoom；
+- 选中格（selected/sel_x/sel_y），加载后直接恢复 Inspect。
 
 文件是简单的行格式：
 
@@ -168,6 +169,7 @@ param.r=3.7
 .\dist\dp-phase\dp-phase.exe /shot out.bmp /load session.dps
 ```
 
+`Load last` 从 exe 旁的 `last-session.txt` 恢复最近一次路径；`Save/Load` 会更新它。
 实测 `/save` 后再 `/load` 的离屏图 hash 完全一致。加载会重建 atlas/检查器，
 并刷新面板 schema；custom 模型需要当前 `experiment.lua` 仍定义它。
 
@@ -283,13 +285,13 @@ src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 117 项；含 GPU 的 149 项
+src/selftest.c      CPU 118 项；含 GPU 的 150 项
 ```
 
 ## 验证
 
-- `/selftest`：**117/117**
-- `/gpu-selftest`：**149/149**
+- `/selftest`：**118/118**
+- `/gpu-selftest`：**150/150**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
@@ -300,10 +302,10 @@ src/selftest.c      CPU 117 项；含 GPU 的 149 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出仍固定到 exe 旁 exports/。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、地图数字刻度与轴名直绘已完成；还缺更多会话状态；目标是 2D 地图，不是 AUTO/MatCont。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格会话状态已完成；还缺更完整的最近文件列表/导出偏好；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.16.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.17.0.zip`
