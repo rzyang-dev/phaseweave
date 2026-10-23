@@ -790,6 +790,7 @@ static int app_load_session(App *a, const char *path)
     else if (strcmp(s.post, "escape") == 0) a->exp.post = 5;
     a->exp.export_scale = dp_clampi(s.export_scale, 1, 4);
     a->exp.export_overlay = s.export_overlay ? 1 : 0;
+    a->exp.escape_radius = s.escape_radius > 0.0 ? s.escape_radius : 10.0;
     if (s.palette[0]) strncpy(a->exp.palette, s.palette, sizeof(a->exp.palette) - 1);
     if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, a->exp.palette, NULL, 0);
     a->selected = -1;
@@ -954,6 +955,14 @@ static int app_do_action(App *a, const char *name, const char *value)
         if (d <= 0.0) { app_set_last(a, "dt must be positive"); return 0; }
         a->exp.dt = d;
         app_set_last(a, "dt changed");
+        return 1;
+    }
+    if (strcmp(name, "escape_set") == 0 && value) {
+        double r = atof(value);
+        if (!(r > 0.0)) { app_set_last(a, "escape radius must be positive"); return 0; }
+        a->exp.escape_radius = r;
+        a->exp.post = 5;
+        app_apply_experiment(a);
         return 1;
     }
     if (strcmp(name, "steps_set") == 0 && value) {
@@ -1195,7 +1204,8 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
         else if (a->exp.post == 5) post = "escape";
         append_list(out, outsz, "%s %s %s", exp_channel_name(&a->exp, a->exp.channel), post, a->exp.palette);
     } else if (strcmp(what, "integration") == 0) {
-        append_list(out, outsz, "%d %.9g %d", a->exp.res, a->exp.dt, a->exp.max_steps);
+        append_list(out, outsz, "%d %.9g %d %.9g", a->exp.res, a->exp.dt,
+                    a->exp.max_steps, a->exp.escape_radius);
     } else if (strcmp(what, "models") == 0) {
         for (i = 0; i < model_count(); ++i) {
             const Model *m = model_at(i);

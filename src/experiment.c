@@ -52,6 +52,7 @@ void exp_init(Experiment *e, const Model *m)
     e->max_steps = 8;
     e->export_scale = 1;
     e->export_overlay = 1;
+    e->escape_radius = 10.0;
     e->channel = 0;
     e->post = 0;
     e->grid = 1;

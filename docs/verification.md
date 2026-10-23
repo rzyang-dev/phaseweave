@@ -9,8 +9,8 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 [3/6] compiling C skeleton (26 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
 OK -> dist/dp-phase/dp-phase.exe (438,784 bytes)
-      staged 10.3 MB
-      dist/dp-phase-1.24.0.zip (4.1 MB)
+      staged 10.4 MB
+      dist/dp-phase-1.25.0.zip (4.2 MB)
 ```
 
 | 项目 | 值 |
@@ -259,7 +259,7 @@ log(stretch)/steps；reset 后缓存，参数/轴变化重算。
 
 ## 15. 逃逸时间
 
-escape 从初始 state 逐步积分，任一分量 |state|>10 或 NaN 即记录逃逸步数；
+escape 从初始 state 逐步积分，任一分量 |state|>Escape r（默认10）或 NaN 即记录逃逸步数；
 适合 Hénon/Standard，Logistic/双摆阈值下不逃逸。结果缓存，reset 重算。
 
 ![escape](shot-escape.png)

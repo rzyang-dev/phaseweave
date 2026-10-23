@@ -214,7 +214,8 @@ CSV 在 ftle 模式追加 ftle 列；`export_scale/export_overlay` 存入 .dps�
 
 ## 10c. 逃逸时间
 
-escape：每 cell 逐步积分，|state|>10/NaN 记录步数；适合 Hénon/Standard；缓存，reset 重算。
+escape：每 cell 逐步积分，|state|>escape_radius/NaN 记录步数；半径来自 Parameters，
+默认10，存入 .dps；适合 Hénon/Standard；缓存，reset 重算。
 
 ## 10d. FTLE 分析
 

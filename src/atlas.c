@@ -349,9 +349,11 @@ int atlas_compute_escape(Atlas *a, const Experiment *e)
 {
     const Model *m;
     int x, y, steps, dim, k;
+    double radius;
     if (!a || !e || !e->mdl || !a->analysis) return 0;
     a->analysis_valid = 1;
     a->analysis_mode = 2;
+    radius = e->escape_radius > 0.0 ? e->escape_radius : 10.0;
     m = e->mdl;
     steps = e->max_steps > 0 ? e->max_steps : 1;
     dim = m->state_dim > 0 ? m->state_dim : 1;
@@ -367,7 +369,7 @@ int atlas_compute_escape(Atlas *a, const Experiment *e)
                 int escaped = 0;
                 m->step(m, state, vals, e->dt, 1);
                 for (k = 0; k < dim; ++k) {
-                    if (!(state[k] == state[k]) || fabs(state[k]) > 10.0) {
+                    if (!(state[k] == state[k]) || fabs(state[k]) > radius) {
                         escaped = 1;
                         break;
                     }

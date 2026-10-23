@@ -24,7 +24,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.24.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.25.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -226,11 +226,13 @@ FTLE 在 atlas reset 后缓存，参数/轴变化才重算；播放时不会每�
 View 下拉的 **escape** 对每个 cell：
 
 - 从初始 state 起逐步积分，最多 `steps` 步；
-- 任一分量 `|state| > 10` 或 NaN 时停止；
+- 任一分量 `|state| > Escape r` 或 NaN 时停止；默认半径 10，可在 Parameters 页改；
 - 颜色表示逃逸步数（未逃逸 = 最大步数）。
 
 适合 Hénon / Standard map 这类可逃逸 map；Logistic/双摆没有该阈值逃逸，显示为常数。
-escape 结果和 FTLE 一样缓存，reset 后重算。
+escape 结果和 FTLE 一样缓存，reset 后重算；半径存入 `.dps`。
+
+![escape 半径](docs/shot-params-escape.png)
 
 ![escape](docs/shot-escape.png)
 
@@ -361,10 +363,10 @@ src/selftest.c      CPU 127 项；含 GPU 的 163 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出默认在 exe 旁 exports/，可 Save As。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出、Standard map、escape 已完成；还缺盆地/更细分析；目标是 2D 地图。
+6. 控制流/ODE、全模型 GPU、轴刻度/轴名、选中格、最近实验、FTLE、导出、Standard map、可调 escape 已完成；还缺盆地/更细分析；目标是 2D 地图。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.24.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.25.0.zip`

@@ -183,12 +183,16 @@ ttk::label .f.nb.par.integ.dl -text "dt" -font DpSmall -anchor w
 ttk::entry .f.nb.par.integ.de -textvariable ::dt -width 6 -takefocus 0
 ttk::label .f.nb.par.integ.sl -text "Steps/frame" -font DpSmall -anchor w
 ttk::entry .f.nb.par.integ.se -textvariable ::steps -width 4 -takefocus 0
+ttk::label .f.nb.par.integ.el -text "Escape r" -font DpSmall -anchor w
+ttk::entry .f.nb.par.integ.ee -textvariable ::escape_radius -width 6 -takefocus 0
 grid .f.nb.par.integ.rl -row 0 -column 0 -sticky w
 grid .f.nb.par.integ.re -row 0 -column 1 -sticky w
 grid .f.nb.par.integ.dl -row 0 -column 2 -sticky w -padx {6 0}
 grid .f.nb.par.integ.de -row 0 -column 3 -sticky w
 grid .f.nb.par.integ.sl -row 1 -column 0 -sticky w
 grid .f.nb.par.integ.se -row 1 -column 1 -sticky w
+grid .f.nb.par.integ.el -row 2 -column 0 -sticky w
+grid .f.nb.par.integ.ee -row 2 -column 1 -sticky w
 
 ttk::frame .f.nb.par.plist
 grid .f.nb.par.plist -row 4 -column 0 -columnspan 2 -sticky nsew -pady {6 0}
@@ -369,8 +373,8 @@ proc rebuild_schema {} {
     .f.nb.par.ax configure -values $names
     .f.nb.par.ay configure -values $names
     if {[catch {set ig [dp_query integration]}] == 0} {
-        lassign $ig res dt steps
-        set ::res $res; set ::dt $dt; set ::steps $steps
+        lassign $ig res dt steps esc
+        set ::res $res; set ::dt $dt; set ::steps $steps; set ::escape_radius $esc
     }
     lassign $::axes ax ay xmin xmax ymin ymax
     .f.nb.par.ax set $ax
@@ -417,6 +421,7 @@ proc apply_params {} {
     call range_set "x=$a,$b"
     call range_set "y=$c,$d"
     if {[catch {set rv [expr {int($::res)}]}] == 0} { call res_set $rv }
+    if {[catch {set ev [expr {double($::escape_radius)}]}] == 0} { call escape_set $ev }
     if {[catch {set dv [expr {double($::dt)}]}] == 0} { call dt_set $dv }
     if {[catch {set sv [expr {int($::steps)}]}] == 0} { call steps_set $sv }
     call apply
