@@ -82,6 +82,16 @@ void dp_rk4_step(double state[4], const DpParams *p)
 #undef DERIV
 }
 
+double dp_energy(const double state[4], const DpParams *p)
+{
+    double t1 = state[0], t2 = state[1], w1 = state[2], w2 = state[3];
+    double ke = 0.5 * (p->m1 + p->m2) * p->l1 * p->l1 * w1 * w1
+              + 0.5 * p->m2 * p->l2 * p->l2 * w2 * w2
+              + p->m2 * p->l1 * p->l2 * w1 * w2 * cos(t1 - t2);
+    double pe = -(p->m1 + p->m2) * p->g * p->l1 * cos(t1) - p->m2 * p->g * p->l2 * cos(t2);
+    return ke + pe;
+}
+
 /* 相空间着色字段：与 GPU 计算着色器使用同一个表达式。
  * u = fract((theta1 + theta2) / (4*pi) + 0.5)，再查 Lua 生成的 1024 项调色板。 */
 float dp_field_value(float theta1, float theta2)

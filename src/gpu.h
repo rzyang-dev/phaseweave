@@ -34,6 +34,10 @@ int  gpu_read_field(Gpu *g, float *field, int res);
 int  gpu_capture_rgba(Gpu *g, int w, int h, unsigned char *out_topdown);
 int  gpu_capture_offscreen(Gpu *g, int w, int h, unsigned char *out_topdown);
 
+/* CPU atlas display: RGBA8 map, already colorized/post-processed by atlas.c */
+void gpu_upload_atlas_rgba(Gpu *g, const unsigned char *rgba, int res);
+void gpu_draw_atlas_view(Gpu *g, int w, int h, const PhaseView *view);
+
 const char *gpu_version(Gpu *g);
 const char *gpu_renderer(Gpu *g);
 const char *gpu_fallback_reason(Gpu *g);

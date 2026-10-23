@@ -13,6 +13,12 @@ typedef struct {
     int force_res;       /* 0 = 用 Lua 默认 */
     const char *capture_path;
     int capture_steps;
+    const char *axis_x;
+    const char *axis_y;
+    const char *channel;
+    const char *post;
+    const char *set_values[8];
+    int nset;
 } AppOptions;
 
 typedef struct App App;

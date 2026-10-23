@@ -23,6 +23,7 @@ typedef struct {
     int  (*action)(void *user, const char *name, const char *value,
                    char *msg, size_t msgsz);
     void (*status)(void *user, PanelStatus *st);
+    void (*query)(void *user, const char *what, char *out, size_t outsz);
     void (*quit)(void *user);
 } PanelCallbacks;
 

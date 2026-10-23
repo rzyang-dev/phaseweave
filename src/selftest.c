@@ -2,7 +2,9 @@
  *   C 参考 RK4 vs Fortran 内核、线程确定性、Lua 契约、调色板、BMP、GPU 一步同步 */
 #include "selftest.h"
 
+#include "atlas.h"
 #include "bmp.h"
+#include "experiment.h"
 #include "gpu.h"
 #include "lua_hot.h"
 #include "phase_view.h"
@@ -150,6 +152,78 @@ static void test_view(void)
     check(total == 0, "circle without a selection -> no overlay");
 
     free(verts);
+}
+
+static void test_experiment_atlas(void)
+{
+    Experiment e;
+    Atlas *a;
+    char err[512];
+    double state[4], params[6];
+    float st[4], fp[6], ch[4];
+    unsigned char lut[DP_LUT_N * 3];
+    unsigned int colors[64];
+    int i, ncolors = 0;
+
+    printf("-- experiment / atlas\n");
+    exp_init(&e);
+    check(exp_index(&e, "theta1") == 0 && exp_index(&e, "m2") == 5,
+          "double-pendulum schema has named parameters");
+    e.res = 16;
+    check(exp_set_axis(&e, 0, "m1") && exp_set_axis(&e, 1, "m2"),
+          "axes can be switched to masses");
+    check(!exp_set_axis(&e, 0, "m2"), "x and y axes must differ");
+    exp_set_range(&e, 0, 0.5, 2.0);
+    exp_set_range(&e, 1, 0.5, 2.0);
+    exp_set_value(&e, "theta1", 0.5);
+    exp_set_value(&e, "theta2", 0.2);
+
+    exp_cell_state(&e, 0, 0, state, params);
+    check(fabs(params[0] - 0.546875) < 1e-6 && fabs(params[1] - 0.546875) < 1e-6,
+          "mass-axis cell maps to parameter values");
+    check(fabs(state[0] - 0.5) < 1e-9 && fabs(state[1] - 0.2) < 1e-9,
+          "fixed angles are used when masses are axes");
+
+    a = atlas_create(&e, e.res, err, sizeof(err));
+    check(a != NULL, "atlas creation");
+    if (a) {
+        dp_phase_lut(lut);
+        e.channel = 2;
+        atlas_colorize(a, &e, lut);
+        atlas_read_cell(a, 0, st, fp, ch);
+        check(fabs(fp[0] - params[0]) < 1e-5 && fabs(fp[1] - params[1]) < 1e-5,
+              "atlas cell preserves per-pixel masses");
+        check(isfinite(ch[2]), "energy channel is finite");
+        for (i = 0; i < 64; ++i) colors[i] = 0;
+        for (i = 0; i < 64 && ncolors < 64; ++i) {
+            const unsigned char *p = atlas_rgba(a) + (size_t)(i * 17 % (16 * 16)) * 4u;
+            unsigned int c = ((unsigned)p[0] << 16) | ((unsigned)p[1] << 8) | p[2];
+            int j, seen = 0;
+            for (j = 0; j < ncolors; ++j) if (colors[j] == c) seen = 1;
+            if (!seen) colors[ncolors++] = c;
+        }
+        check(ncolors > 1, "mass map produces more than one color");
+        e.post = 2;
+        atlas_colorize(a, &e, lut);
+        check(atlas_rgba(a) != NULL, "energy/range view colorizes");
+        atlas_destroy(a);
+    }
+
+    {
+        DpParams p;
+        double s0[4] = { 0.0, 0.0, 0.0, 0.0 };
+        double e0, e1;
+        p.m1 = p.m2 = p.l1 = p.l2 = 1.0;
+        p.g = 9.81; p.damping = 0.0; p.dt = 0.001;
+        e0 = dp_energy(s0, &p);
+        check(fabs(e0 + 29.43) < 1e-6, "rest energy matches m g l");
+        s0[0] = 0.5; s0[1] = 0.2;
+        e0 = dp_energy(s0, &p);
+        for (i = 0; i < 2000; ++i) dp_rk4_step(s0, &p);
+        e1 = dp_energy(s0, &p);
+        check(fabs(e1 - e0) < 1e-3 * fmax(1.0, fabs(e0)),
+              "RK4 conserves energy for damping=0");
+    }
 }
 
 static void test_fortran(void)
@@ -568,9 +642,10 @@ int dp_selftest(int with_gpu)
     g_pass = 0;
     g_fail = 0;
     setvbuf(stdout, NULL, _IONBF, 0);
-    printf("\nDouble Pendulum Phase Space - selftest\n\n");
+    printf("\nDynamical Systems Atlas - selftest\n\n");
     test_angles();
     test_view();
+    test_experiment_atlas();
     test_fortran();
     test_timing();
     test_lua();

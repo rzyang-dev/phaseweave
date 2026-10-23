@@ -1,7 +1,9 @@
-/* app.c - 窗口、Lua 热逻辑、两种内核、相空间视图与叠加层的编排 */
+/* app.c - experiment atlas: windows, CPU sampler, Tcl/Tk panel, GL/GDI display */
 #include "app.h"
 
+#include "atlas.h"
 #include "bmp.h"
+#include "experiment.h"
 #include "gpu.h"
 #include "lua_hot.h"
 #include "phase_view.h"
@@ -9,8 +11,8 @@
 #include "panel.h"
 #include "physics.h"
 #include "platform.h"
-#include "sim.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,24 +23,23 @@ struct App {
 
     Platform *plat;
     Gpu      *gpu;
-    Sim      *sim;
+    Atlas    *atlas;
     LuaHot   *lua;
     PendulumView *pview;
     Panel    *panel;
     int      quit;
     int      right_x, right_w, pend_h;
 
-    DpConfig cfg;
-    DpParams params;
-    int      kernel;
+    Experiment exp;
     int      use_lua;
     int      legacy;
-    int      paused;
 
     PhaseView view;
     int      selected;
     int      sel_x, sel_y;
     float    sel_state[4];
+    float    sel_params[6];
+    float    sel_ch[4];
     int      dragging;
     int      drag_x, drag_y;
 
@@ -54,7 +55,6 @@ struct App {
 
     int      hot_from_disk;
     char     last_action[256];
-
     unsigned char lut[DP_LUT_N * 3];
     char     hot_path[MAX_PATH];
     char     title[512];
@@ -67,20 +67,13 @@ static void app_pend_key(void *user, int vk, int down);
 static int  panel_action_cb(void *user, const char *name, const char *value,
                             char *msg, size_t msgsz);
 static void panel_status_cb(void *user, PanelStatus *st);
+static void panel_query_cb(void *user, const char *what, char *out, size_t outsz);
 static void panel_quit_cb(void *user);
 static int  app_do_action(App *a, const char *name, const char *value);
 static void app_read_selected(App *a);
 static void app_render_phase(App *a);
-
-static const char *kernel_tag(int kernel)
-{
-    return kernel == DP_KERNEL_GPU ? "gpu" : "cpu";
-}
-
-static const char *kernel_label(int kernel)
-{
-    return kernel == DP_KERNEL_GPU ? "GPU compute" : "Fortran CPU";
-}
+static void app_apply_experiment(App *a);
+static void app_colorize(App *a);
 
 static void app_set_last(App *a, const char *msg)
 {
@@ -91,16 +84,6 @@ static void app_set_last(App *a, const char *msg)
 
 static void app_error_box(App *a, const char *msg)
 {
-    {
-        char path[MAX_PATH];
-        DWORD n = GetTempPathA(MAX_PATH, path);
-        if (n != 0) {
-            FILE *f;
-            strncat(path, "dp-phase-error.txt", MAX_PATH - strlen(path) - 1);
-            f = fopen(path, "a");
-            if (f) { fprintf(f, "%s\n", msg ? msg : "(null)"); fclose(f); }
-        }
-    }
     app_set_last(a, msg ? msg : "error");
     OutputDebugStringA(msg);
     OutputDebugStringA("\n");
@@ -111,96 +94,57 @@ static void app_error_box(App *a, const char *msg)
     platform_message_box(msg, 1);
 }
 
-static void app_params_from_cfg(App *a)
-{
-    a->params.m1 = a->cfg.physics.m1;
-    a->params.m2 = a->cfg.physics.m2;
-    a->params.l1 = a->cfg.physics.l1;
-    a->params.l2 = a->cfg.physics.l2;
-    a->params.g = a->cfg.physics.g;
-    a->params.damping = a->cfg.physics.damping;
-    a->params.dt = a->cfg.sim.dt;
-}
-
-static void app_sync_display(App *a)
-{
-    if (!a->gpu || !a->sim) return;
-    if (gpu_legacy(a->gpu)) {
-        sim_refresh_rgba(a->sim);
-        gpu_upload_rgba_legacy(a->gpu, sim_rgba(a->sim), sim_res(a->sim));
-    } else {
-        gpu_upload_field(a->gpu, sim_field(a->sim), sim_res(a->sim));
-    }
-}
-
-static int app_apply_palette(App *a, const unsigned char *lut)
-{
-    memcpy(a->lut, lut, DP_LUT_N * 3);
-    if (a->sim) sim_set_lut(a->sim, a->lut);
-    if (a->gpu && gpu_compute(a->gpu)) gpu_set_lut(a->gpu, a->lut);
-    return 1;
-}
-
 static int app_load_palette(App *a)
 {
     unsigned char lut[DP_LUT_N * 3];
     char err[512];
     err[0] = 0;
-    if (a->use_lua && lua_hot_palette(a->lua, lut, err, sizeof(err))) {
-        return app_apply_palette(a, lut);
+    if (a->use_lua && a->lua && lua_hot_palette(a->lua, lut, err, sizeof(err))) {
+        memcpy(a->lut, lut, sizeof(lut));
+        return 1;
     }
-    if (a->err_shown == 0 && err[0]) app_error_box(a, err);
-    dp_phase_lut(lut);
-    return app_apply_palette(a, lut);
+    dp_phase_lut(a->lut);
+    return 0;
+}
+
+static void app_colorize(App *a)
+{
+    if (!a || !a->atlas) return;
+    atlas_colorize(a->atlas, &a->exp, a->lut);
+    if (a->gpu) {
+        if (a->legacy) gpu_upload_rgba_legacy(a->gpu, atlas_rgba(a->atlas), atlas_res(a->atlas));
+        else gpu_upload_atlas_rgba(a->gpu, atlas_rgba(a->atlas), atlas_res(a->atlas));
+    }
 }
 
 static void app_set_title(App *a, int force)
 {
     double now = platform_now();
     char buf[512];
+    ExpChannelInfo ci;
     if (!force && now - a->title_t < 0.25) return;
     if (!a->plat) return;
     a->title_t = now;
-
-    if (a->use_lua &&
-        lua_hot_title(a->lua, (int)(a->fps + 0.5), a->steps_last, buf, sizeof(buf), NULL, 0)) {
-        if (buf[0]) {
-            platform_set_title(a->plat, buf);
-            return;
-        }
-    }
-    snprintf(buf, sizeof(buf), "Phase Space | %s | %d fps | %dx%d | %s",
-             kernel_label(a->kernel), (int)(a->fps + 0.5),
-             a->cfg.grid.res, a->cfg.grid.res,
-             a->paused ? "paused" : "phase");
+    exp_channel_info(&a->exp, a->exp.channel, &ci);
+    snprintf(buf, sizeof(buf), "%s Atlas | CPU | %d fps | %dx%d | %s%s",
+             a->exp.title, (int)(a->fps + 0.5), a->exp.res, a->exp.res,
+             ci.name, a->exp.paused ? " | paused" : "");
     platform_set_title(a->plat, buf);
 }
 
 static void app_read_selected(App *a)
 {
     int idx;
-    if (!a || !a->sim || a->selected < 0) return;
+    if (!a || !a->atlas || a->selected < 0) return;
     idx = a->selected;
-    if (a->kernel == DP_KERNEL_GPU && a->gpu && gpu_compute(a->gpu)) {
-        if (!gpu_read_cell(a->gpu, idx, a->sel_state)) {
-            memset(a->sel_state, 0, sizeof(a->sel_state));
-        }
-    } else {
-        memcpy(a->sel_state, sim_state(a->sim) + (size_t)idx * 4u, sizeof(a->sel_state));
-    }
+    atlas_read_cell(a->atlas, idx, a->sel_state, a->sel_params, a->sel_ch);
 }
 
 static void app_reset(App *a)
 {
-    if (!a->sim) return;
-    sim_reset(a->sim, &a->cfg);
-    if (a->kernel == DP_KERNEL_GPU && a->gpu && gpu_compute(a->gpu)) {
-        gpu_upload_state(a->gpu, sim_state(a->sim), sim_res(a->sim));
-        gpu_step(a->gpu, 0, &a->params);
-    } else {
-        app_sync_display(a);
-    }
-    if (a->use_lua) lua_hot_reset(a->lua);
+    if (!a || !a->atlas) return;
+    atlas_reset(a->atlas, &a->exp);
+    app_colorize(a);
     a->acc = 0.0;
     a->steps_last = 0;
     app_read_selected(a);
@@ -208,164 +152,248 @@ static void app_reset(App *a)
     app_set_title(a, 1);
 }
 
-static int app_toggle_kernel(App *a)
+static void app_apply_experiment(App *a)
 {
-    if (!a->gpu || !gpu_compute(a->gpu) || !a->sim) {
-        app_error_box(a, "GPU compute shader is not available on this system.");
-        return 0;
+    char err[512];
+    if (!a || !a->atlas) return;
+    if (a->exp.res != atlas_res(a->atlas)) {
+        atlas_resize(a->atlas, a->exp.res, err, sizeof(err));
+        if (atlas_res(a->atlas) != a->exp.res) {
+            a->exp.res = atlas_res(a->atlas);
+            app_error_box(a, "atlas resize failed");
+        }
     }
-    if (a->kernel == DP_KERNEL_GPU) {
-        gpu_download_state(a->gpu, sim_state(a->sim), sim_res(a->sim));
-        sim_refresh_field(a->sim);
-        a->kernel = DP_KERNEL_CPU;
-        app_sync_display(a);
-    } else {
-        gpu_upload_state(a->gpu, sim_state(a->sim), sim_res(a->sim));
-        gpu_step(a->gpu, 0, &a->params);
-        a->kernel = DP_KERNEL_GPU;
-    }
-    if (a->use_lua) lua_hot_set_kernel(a->lua, kernel_tag(a->kernel));
+    atlas_reset(a->atlas, &a->exp);
+    app_colorize(a);
     app_read_selected(a);
-    app_set_last(a, a->kernel == DP_KERNEL_GPU ? "kernel: GPU compute" : "kernel: Fortran CPU");
+    app_set_last(a, "applied");
     app_set_title(a, 1);
-    return 1;
 }
 
 static void app_advance(App *a, int steps)
 {
-    int done = 0;
-    if (!a || !a->sim || steps <= 0) return;
-    if (a->kernel == DP_KERNEL_GPU && a->gpu && gpu_compute(a->gpu)) {
-        while (done < steps) {
-            int chunk = steps - done;
-            if (chunk > 64) chunk = 64;
-            gpu_step(a->gpu, chunk, &a->params);
-            done += chunk;
-        }
-    } else {
-        sim_step_cpu(a->sim, steps, &a->params);
-        app_sync_display(a);
-        done = steps;
-    }
-    a->steps_last = done;
+    if (!a || !a->atlas) return;
+    atlas_step(a->atlas, &a->exp, steps > 0 ? steps : 0);
+    app_colorize(a);
+    a->steps_last = steps;
     app_read_selected(a);
 }
 
-static int app_read_disk_hot(App *a, char **data, size_t *len)
+static int app_read_disk_lua(App *a, char **data, size_t *len)
 {
-    char path[MAX_PATH];
     char dir[MAX_PATH];
     platform_exe_dir(dir, sizeof(dir));
-    snprintf(path, sizeof(path), "%s\\experiments\\double-pendulum.lua", dir);
-    strncpy(a->hot_path, path, sizeof(a->hot_path) - 1);
-    a->hot_path[sizeof(a->hot_path) - 1] = 0;
-    if (platform_read_file(path, data, len)) {
-        a->hot_from_disk = 1;
-        return 1;
-    }
-    /* 兼容旧布局：exe 旁边的 hot.lua */
-    snprintf(path, sizeof(path), "%s\\hot.lua", dir);
-    strncpy(a->hot_path, path, sizeof(a->hot_path) - 1);
-    a->hot_path[sizeof(a->hot_path) - 1] = 0;
-    if (platform_read_file(path, data, len)) {
-        a->hot_from_disk = 1;
-        return 1;
-    }
+    snprintf(a->hot_path, sizeof(a->hot_path), "%s\\experiments\\double-pendulum.lua", dir);
+    if (platform_read_file(a->hot_path, data, len)) { a->hot_from_disk = 1; return 1; }
+    snprintf(a->hot_path, sizeof(a->hot_path), "%s\\hot.lua", dir);
+    if (platform_read_file(a->hot_path, data, len)) { a->hot_from_disk = 1; return 1; }
     a->hot_from_disk = 0;
     return 0;
 }
 
-/* 让 Lua 按键处理一次（保留 R/Space/C/K 的热逻辑语义） */
-static int app_lua_key(App *a, const char *name)
+static void app_reload(App *a)
 {
-    char action[64];
-    char err[512];
-    if (!a->use_lua || !a->lua) return 0;
-    action[0] = 0;
-    err[0] = 0;
-    if (!lua_hot_key(a->lua, name, 1, action, sizeof(action), err, sizeof(err))) {
-        app_error_box(a, err[0] ? err : "hot.key failed");
-        return 0;
+    char *disk = NULL;
+    size_t len = 0;
+    char err[1024];
+    if (!a) return;
+    if (!app_read_disk_lua(a, &disk, &len)) {
+        app_error_box(a, "experiments/double-pendulum.lua not found next to dp-phase.exe");
+        return;
     }
-    if (strcmp(action, "reset") == 0) app_reset(a);
-    else if (strcmp(action, "palette") == 0) { app_load_palette(a); app_set_last(a, "palette changed"); }
-    else if (strcmp(action, "kernel") == 0) app_toggle_kernel(a);
-    else if (strcmp(action, "pause") == 0) app_set_title(a, 1);
-    return 1;
+    if (!a->lua) {
+        a->lua = lua_hot_create(disk, len, a->hot_path, "cpu", a->exp.res, err, sizeof(err));
+        if (!a->lua) {
+            app_error_box(a, err[0] ? err : "Lua palette failed to load");
+            platform_free(disk);
+            return;
+        }
+        a->use_lua = 1;
+    } else if (!lua_hot_reload(a->lua, disk, len, a->hot_path, err, sizeof(err))) {
+        char msg[1200];
+        snprintf(msg, sizeof(msg), "experiment reload failed: %s", err[0] ? err : "unknown error");
+        app_error_box(a, msg);
+        platform_free(disk);
+        return;
+    }
+    if (app_load_palette(a)) app_colorize(a);
+    app_set_last(a, "palette reloaded");
+    app_set_title(a, 1);
+    platform_free(disk);
 }
 
-static void app_set_view_flag(App *a, const char *name, int value)
+static int parse_assignment(const char *value, char *name, size_t namesz, double *v)
 {
-    if (strcmp(name, "grid") == 0) a->view.grid = value ? 1 : 0;
-    else if (strcmp(name, "periodic") == 0) a->view.periodic = value ? 1 : 0;
-    else if (strcmp(name, "circle") == 0) a->view.circle = value ? 1 : 0;
-    app_set_last(a, name);
+    const char *eq;
+    char *end;
+    size_t n;
+    if (!value || !(eq = strchr(value, '='))) return 0;
+    n = (size_t)(eq - value);
+    if (n == 0 || n >= namesz) return 0;
+    memcpy(name, value, n); name[n] = 0;
+    *v = strtod(eq + 1, &end);
+    return end != eq + 1;
+}
+
+static int parse_axis_range(const char *value, int *which, double *lo, double *hi)
+{
+    const char *eq;
+    char *end;
+    if (!value || !(eq = strchr(value, '='))) return 0;
+    if (eq - value == 1 && (value[0] == 'x' || value[0] == 'y')) *which = value[0] == 'x' ? 0 : 1;
+    else return 0;
+    *lo = strtod(eq + 1, &end);
+    if (*end != ',') return 0;
+    *hi = strtod(end + 1, NULL);
+    return *hi > *lo;
 }
 
 static int app_do_action(App *a, const char *name, const char *value)
 {
     if (!a || !name) return 0;
-    if (strcmp(name, "reset") == 0) {
-        if (!app_lua_key(a, "R")) app_reset(a);
-        else app_set_last(a, "reset");
-        return 1;
-    }
+
+    if (strcmp(name, "reset") == 0) { app_reset(a); return 1; }
     if (strcmp(name, "pause") == 0) {
-        if (!app_lua_key(a, "SPACE")) {
-            a->paused = !a->paused;
-            app_set_last(a, a->paused ? "paused" : "running");
-        } else {
-            app_set_last(a, "pause toggled");
-        }
+        a->exp.paused = !a->exp.paused;
+        app_set_last(a, a->exp.paused ? "paused" : "running");
         app_set_title(a, 1);
         return 1;
     }
     if (strcmp(name, "palette") == 0) {
-        if (app_lua_key(a, "C")) app_set_last(a, "palette changed");
+        static const char *schemes[] = { "phase", "ember", "ice", "mono" };
+        int i, n = 4, cur = 0;
+        for (i = 0; i < n; ++i) if (strcmp(a->exp.palette, schemes[i]) == 0) cur = i;
+        strcpy(a->exp.palette, schemes[(cur + 1) % n]);
+        if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, a->exp.palette, NULL, 0);
+        app_load_palette(a);
+        app_colorize(a);
+        app_set_last(a, "palette changed");
         return 1;
     }
-    if (strcmp(name, "palette_set") == 0) {
-        char err[512];
-        if (!value || !value[0]) return 0;
-        err[0] = 0;
-        if (a->use_lua && lua_hot_set_scheme(a->lua, value, err, sizeof(err))) {
-            app_load_palette(a);
-            app_set_last(a, value);
-            return 1;
-        }
-        app_set_last(a, err[0] ? err : "palette_set failed");
-        return 0;
-    }
-    if (strcmp(name, "kernel") == 0) {
-        if (!app_lua_key(a, "K")) app_toggle_kernel(a);
+    if (strcmp(name, "palette_set") == 0 && value && value[0]) {
+        strncpy(a->exp.palette, value, sizeof(a->exp.palette) - 1);
+        if (a->use_lua && a->lua) lua_hot_set_scheme(a->lua, value, NULL, 0);
+        app_load_palette(a);
+        app_colorize(a);
+        app_set_last(a, value);
         return 1;
-    }
-    if (strcmp(name, "kernel_set") == 0) {
-        int want_gpu = value && strcmp(value, "gpu") == 0;
-        int is_gpu = (a->kernel == DP_KERNEL_GPU);
-        if (want_gpu == is_gpu) {
-            app_set_last(a, want_gpu ? "kernel: GPU compute" : "kernel: Fortran CPU");
-            return 1;
-        }
-        return app_toggle_kernel(a);
     }
     if (strcmp(name, "reload") == 0) { app_reload(a); return 1; }
     if (strcmp(name, "grid") == 0 || strcmp(name, "periodic") == 0 || strcmp(name, "circle") == 0) {
-        int cur = (strcmp(name, "grid") == 0) ? a->view.grid :
-                  (strcmp(name, "periodic") == 0) ? a->view.periodic : a->view.circle;
+        int cur = (strcmp(name, "grid") == 0) ? a->exp.grid :
+                  (strcmp(name, "periodic") == 0) ? a->exp.periodic : a->exp.circle;
         int val = (value && value[0]) ? (value[0] != '0') : !cur;
-        app_set_view_flag(a, name, val);
+        if (strcmp(name, "grid") == 0) a->exp.grid = val;
+        else if (strcmp(name, "periodic") == 0) a->exp.periodic = val;
+        else a->exp.circle = val;
+        app_set_last(a, name);
         return 1;
     }
-    if (strcmp(name, "view_reset") == 0) {
+    if (strcmp(name, "view_reset") == 0) { pv_reset(&a->view); app_set_last(a, "view reset"); return 1; }
+    if (strcmp(name, "quit") == 0) { a->quit = 1; PostQuitMessage(0); return 1; }
+
+    if (strcmp(name, "param_set") == 0) {
+        char pname[EXP_NAME];
+        double v;
+        if (!parse_assignment(value, pname, sizeof(pname), &v)) {
+            app_set_last(a, "param_set: expected name=value"); return 0;
+        }
+        if (!exp_set_value(&a->exp, pname, v)) {
+            app_set_last(a, "param_set: out of range"); return 0;
+        }
+        app_set_last(a, pname);
+        return 1;
+    }
+    if (strcmp(name, "axis_set") == 0) {
+        int which;
+        const char *eq;
+        if (!value || !(eq = strchr(value, '=')) || eq - value != 1) return 0;
+        which = value[0] == 'x' ? 0 : (value[0] == 'y' ? 1 : -1);
+        if (which < 0 || !exp_set_axis(&a->exp, which, eq + 1)) {
+            app_set_last(a, "axis_set failed"); return 0;
+        }
+        app_apply_experiment(a);
+        return 1;
+    }
+    if (strcmp(name, "range_set") == 0) {
+        int which;
+        double lo, hi;
+        if (!parse_axis_range(value, &which, &lo, &hi)) {
+            app_set_last(a, "range_set: expected x=lo,hi"); return 0;
+        }
+        exp_set_range(&a->exp, which, lo, hi);
+        app_set_last(a, "range changed");
+        return 1;
+    }
+    if (strcmp(name, "res_set") == 0 && value) {
+        int r = atoi(value);
+        if (r < 16 || r > 512) { app_set_last(a, "res out of range"); return 0; }
+        a->exp.res = r;
+        app_set_last(a, "resolution changed");
+        return 1;
+    }
+    if (strcmp(name, "dt_set") == 0 && value) {
+        double d = atof(value);
+        if (d <= 0.0) { app_set_last(a, "dt must be positive"); return 0; }
+        a->exp.dt = d;
+        app_set_last(a, "dt changed");
+        return 1;
+    }
+    if (strcmp(name, "steps_set") == 0 && value) {
+        int s = atoi(value);
+        if (s < 1) s = 1;
+        if (s > DP_MAX_STEPS) s = DP_MAX_STEPS;
+        a->exp.max_steps = s;
+        app_set_last(a, "steps changed");
+        return 1;
+    }
+    if (strcmp(name, "channel_set") == 0 && value) {
+        int i;
+        for (i = 0; i < EXP_NCH; ++i) if (strcmp(exp_channel_name(i), value) == 0) break;
+        if (i >= EXP_NCH) { app_set_last(a, "unknown channel"); return 0; }
+        a->exp.channel = i;
+        app_colorize(a);
+        app_set_last(a, value);
+        app_set_title(a, 1);
+        return 1;
+    }
+    if (strcmp(name, "post_set") == 0 && value) {
+        if (strcmp(value, "raw") == 0) a->exp.post = 0;
+        else if (strcmp(value, "gradient") == 0) a->exp.post = 1;
+        else if (strcmp(value, "range") == 0) a->exp.post = 2;
+        else if (strcmp(value, "variance") == 0) a->exp.post = 3;
+        else { app_set_last(a, "unknown post"); return 0; }
+        app_colorize(a);
+        app_set_last(a, value);
+        return 1;
+    }
+    if (strcmp(name, "preset") == 0 && value) {
+        if (strcmp(value, "masses") == 0) {
+            exp_set_axis(&a->exp, 0, "m1");
+            exp_set_axis(&a->exp, 1, "m2");
+            exp_set_range(&a->exp, 0, 0.2, 3.0);
+            exp_set_range(&a->exp, 1, 0.2, 3.0);
+            exp_set_value(&a->exp, "theta1", 0.5);
+            exp_set_value(&a->exp, "theta2", 0.0);
+            exp_set_value(&a->exp, "omega1", 0.0);
+            exp_set_value(&a->exp, "omega2", 0.0);
+            a->exp.channel = 3;
+            a->exp.post = 2;
+        } else {
+            exp_set_axis(&a->exp, 0, "theta1");
+            exp_set_axis(&a->exp, 1, "theta2");
+            exp_set_range(&a->exp, 0, -DP_PI, DP_PI);
+            exp_set_range(&a->exp, 1, -DP_PI, DP_PI);
+            a->exp.channel = 0;
+            a->exp.post = 0;
+        }
+        a->selected = -1;
         pv_reset(&a->view);
-        app_set_last(a, "view reset");
+        app_apply_experiment(a);
+        app_set_last(a, value);
         return 1;
     }
-    if (strcmp(name, "quit") == 0) {
-        PostQuitMessage(0);
-        return 1;
-    }
+    if (strcmp(name, "apply") == 0) { app_apply_experiment(a); return 1; }
     app_set_last(a, "unknown action");
     return 0;
 }
@@ -375,14 +403,12 @@ static void app_event(App *a, const DpEvent *ev)
     const char *action = NULL;
     int w, h;
     if (!a || !ev) return;
-
     if (ev->type == DP_EV_KEY) {
         if (!ev->b) return;
         switch (ev->a) {
         case 'R': action = "reset"; break;
         case VK_SPACE: action = "pause"; break;
         case 'C': action = "palette"; break;
-        case 'K': action = "kernel"; break;
         case 'G': action = "grid"; break;
         case 'P': action = "periodic"; break;
         case 'O': action = "circle"; break;
@@ -394,44 +420,28 @@ static void app_event(App *a, const DpEvent *ev)
         if (action) app_do_action(a, action, "");
         return;
     }
-
     w = a->plat ? platform_width(a->plat) : 0;
     h = a->plat ? platform_height(a->plat) : 0;
     if (w <= 0 || h <= 0) return;
 
     if (ev->type == DP_EV_MOUSE_DOWN && ev->a == 0) {
-        a->dragging = 1;
-        a->drag_x = ev->b;
-        a->drag_y = ev->c;
-        return;
+        a->dragging = 1; a->drag_x = ev->b; a->drag_y = ev->c; return;
     }
-    if (ev->type == DP_EV_MOUSE_UP && ev->a == 0) {
-        a->dragging = 0;
-        return;
-    }
-    if (ev->type == DP_EV_MOUSE_MOVE) {
-        if (a->dragging) {
-            int dx = ev->a - a->drag_x;
-            int dy = ev->b - a->drag_y;
-            pv_pan(&a->view, a->cfg.grid.range, w, h, dx, dy);
-            a->drag_x = ev->a;
-            a->drag_y = ev->b;
-        }
+    if (ev->type == DP_EV_MOUSE_UP && ev->a == 0) { a->dragging = 0; return; }
+    if (ev->type == DP_EV_MOUSE_MOVE && a->dragging) {
+        pv_pan(&a->view, 1.0, w, h, ev->a - a->drag_x, ev->b - a->drag_y);
+        a->drag_x = ev->a; a->drag_y = ev->b;
         return;
     }
     if (ev->type == DP_EV_MOUSE_DOWN && ev->a == 1) {
         int cx, cy;
-        if (pv_pick(&a->view, a->cfg.grid.range, sim_res(a->sim), w, h,
-                    ev->b, ev->c, &cx, &cy)) {
-            a->selected = cy * sim_res(a->sim) + cx;
-            a->sel_x = cx;
-            a->sel_y = cy;
+        if (pv_pick(&a->view, 1.0, atlas_res(a->atlas), w, h, ev->b, ev->c, &cx, &cy)) {
+            char msg[64];
+            a->selected = cy * atlas_res(a->atlas) + cx;
+            a->sel_x = cx; a->sel_y = cy;
             app_read_selected(a);
-            {
-                char msg[64];
-                snprintf(msg, sizeof(msg), "selected (%d, %d)", cx, cy);
-                app_set_last(a, msg);
-            }
+            snprintf(msg, sizeof(msg), "selected (%d, %d)", cx, cy);
+            app_set_last(a, msg);
         } else {
             a->selected = -1;
             app_set_last(a, "selection cleared");
@@ -440,59 +450,91 @@ static void app_event(App *a, const DpEvent *ev)
     }
     if (ev->type == DP_EV_WHEEL) {
         double factor = (ev->a > 0) ? 1.15 : 1.0 / 1.15;
-        pv_zoom_at(&a->view, a->cfg.grid.range, w, h, ev->b, ev->c, factor);
+        pv_zoom_at(&a->view, 1.0, w, h, ev->b, ev->c, factor);
         return;
     }
 }
 
-static void app_event_cb(void *user, const DpEvent *ev)
-{
-    app_event((App *)user, ev);
-}
+static void app_event_cb(void *user, const DpEvent *ev) { app_event((App *)user, ev); }
 
 static int panel_action_cb(void *user, const char *name, const char *value,
                            char *msg, size_t msgsz)
 {
     App *a = (App *)user;
     int ok = app_do_action(a, name, value);
-    if (msg && msgsz) {
-        snprintf(msg, msgsz, "%s", a ? a->last_action : "");
-    }
+    if (msg && msgsz) snprintf(msg, msgsz, "%s", a ? a->last_action : "");
     return ok;
 }
 
 static void panel_status_cb(void *user, PanelStatus *st)
 {
     App *a = (App *)user;
-    int paused = 0;
-    char scheme[32] = "phase";
-    char err[256];
     if (!a || !st) return;
     memset(st, 0, sizeof(*st));
-    st->zoom = 1.0;
-    st->kernel_gpu = (a->kernel == DP_KERNEL_GPU);
-    st->res = a->cfg.grid.res;
+    st->paused = a->exp.paused;
+    st->kernel_gpu = 0;
+    st->res = a->exp.res;
     st->fps = (int)(a->fps + 0.5);
-    st->grid = a->view.grid;
-    st->periodic = a->view.periodic;
-    st->circle = a->view.circle;
-    st->selected = (a->selected >= 0);
-    st->sel_x = a->sel_x;
-    st->sel_y = a->sel_y;
+    st->grid = a->exp.grid;
+    st->periodic = a->exp.periodic;
+    st->circle = a->exp.circle;
+    st->selected = a->selected >= 0;
+    st->sel_x = a->sel_x; st->sel_y = a->sel_y;
     st->zoom = a->view.zoom;
-    if (a->use_lua && a->lua) {
-        err[0] = 0;
-        if (!lua_hot_status(a->lua, &paused, scheme, sizeof(scheme), err, sizeof(err))) {
-            paused = a->paused;
-            strcpy(scheme, "phase");
-        }
-    } else {
-        paused = a->paused;
-    }
-    st->paused = paused;
-    strncpy(st->scheme, scheme, sizeof(st->scheme) - 1);
-    strncpy(st->source, a->hot_from_disk ? "hot.lua (disk override)" : "embedded (RCDATA)", sizeof(st->source) - 1);
+    strncpy(st->scheme, a->exp.palette, sizeof(st->scheme) - 1);
+    strncpy(st->source, a->hot_from_disk ? "experiments/double-pendulum.lua" : "no experiment script",
+            sizeof(st->source) - 1);
     strncpy(st->last, a->last_action, sizeof(st->last) - 1);
+}
+
+static void append_list(char *out, size_t outsz, const char *fmt, ...)
+{
+    size_t n = strlen(out);
+    va_list ap;
+    if (n >= outsz - 1) return;
+    va_start(ap, fmt);
+    vsnprintf(out + n, outsz - n, fmt, ap);
+    va_end(ap);
+}
+
+static void panel_query_cb(void *user, const char *what, char *out, size_t outsz)
+{
+    App *a = (App *)user;
+    int i;
+    if (!out || outsz == 0) return;
+    out[0] = 0;
+    if (!a || !what) return;
+    if (strcmp(what, "params") == 0) {
+        for (i = 0; i < a->exp.np; ++i) {
+            ExpParam *p = &a->exp.p[i];
+            append_list(out, outsz, "{%s %s %.9g %.9g %.9g %.9g %d %d} ",
+                        p->name, p->label, p->value, p->min, p->max, p->step,
+                        p->axis_ok, p->group);
+        }
+    } else if (strcmp(what, "axes") == 0) {
+        append_list(out, outsz, "%s %s %.9g %.9g %.9g %.9g",
+                    a->exp.p[a->exp.axis_x].name, a->exp.p[a->exp.axis_y].name,
+                    a->exp.xmin, a->exp.xmax, a->exp.ymin, a->exp.ymax);
+    } else if (strcmp(what, "channels") == 0) {
+        for (i = 0; i < EXP_NCH; ++i) {
+            ExpChannelInfo ci;
+            exp_channel_info(&a->exp, i, &ci);
+            append_list(out, outsz, "{%s %s %s %.9g %.9g %d} ",
+                        ci.name, ci.label, ci.unit, ci.min, ci.max, ci.cyclic);
+        }
+    } else if (strcmp(what, "view") == 0) {
+        const char *post = "raw";
+        if (a->exp.post == 1) post = "gradient";
+        else if (a->exp.post == 2) post = "range";
+        else if (a->exp.post == 3) post = "variance";
+        append_list(out, outsz, "%s %s %s", exp_channel_name(a->exp.channel), post, a->exp.palette);
+    } else if (strcmp(what, "integration") == 0) {
+        append_list(out, outsz, "%d %.9g %d", a->exp.res, a->exp.dt, a->exp.max_steps);
+    } else if (strcmp(what, "source") == 0) {
+        append_list(out, outsz, "%s", a->hot_path[0] ? a->hot_path : "(none)");
+    } else if (strcmp(what, "title") == 0) {
+        append_list(out, outsz, "%s", a->exp.title);
+    }
 }
 
 static void panel_quit_cb(void *user)
@@ -509,100 +551,25 @@ static void app_pend_close(void *user)
     PostQuitMessage(0);
 }
 
-static void app_pend_key(void *user, int vk, int down)
-{
-    app_key((App *)user, vk, down);
-}
+static void app_pend_key(void *user, int vk, int down) { app_key((App *)user, vk, down); }
 
 void app_key(App *a, int vk, int down)
 {
     DpEvent ev;
-    ev.type = DP_EV_KEY;
-    ev.a = vk;
-    ev.b = down;
-    ev.c = 0;
+    ev.type = DP_EV_KEY; ev.a = vk; ev.b = down; ev.c = 0;
     app_event(a, &ev);
-}
-
-static void app_reload(App *a)
-{
-    char *disk = NULL;
-    size_t disk_len = 0;
-    const char *src;
-    size_t len;
-    char err[1024];
-    DpConfig next;
-
-    if (!app_read_disk_hot(a, &disk, &disk_len)) {
-        app_error_box(a, "experiments/double-pendulum.lua not found next to dp-phase.exe");
-        return;
-    }
-    if (!a->lua) {
-        app_error_box(a, "Lua hot logic is not available.");
-        if (disk) platform_free(disk);
-        return;
-    }
-    src = disk;
-    len = disk_len;
-    err[0] = 0;
-    if (!src || len == 0 || !lua_hot_reload(a->lua, src, len, a->hot_path[0] ? a->hot_path : "double-pendulum.lua",
-                                          err, sizeof(err))) {
-        char msg[1200];
-        snprintf(msg, sizeof(msg), "experiment reload failed: %s", err[0] ? err : "unknown error");
-        app_error_box(a, msg);
-        if (disk) platform_free(disk);
-        return;
-    }
-
-    next = a->cfg;
-    err[0] = 0;
-    if (lua_hot_defaults(a->lua, &next, err, sizeof(err))) {
-        int res_changed = (next.grid.res != a->cfg.grid.res);
-        int init_changed = (next.grid.range != a->cfg.grid.range ||
-                            next.grid.omega1 != a->cfg.grid.omega1 ||
-                            next.grid.omega2 != a->cfg.grid.omega2);
-        a->cfg = next;
-        app_params_from_cfg(a);
-        lua_hot_set_res(a->lua, a->cfg.grid.res);
-        if (res_changed) {
-            if (a->sim) sim_destroy(a->sim);
-            a->sim = sim_create(&a->cfg, a->cfg.sim.threads, err, sizeof(err));
-            if (!a->sim) {
-                app_error_box(a, err);
-                if (disk) platform_free(disk);
-                return;
-            }
-            a->selected = -1;
-            if (a->gpu) {
-                gpu_set_res(a->gpu, a->cfg.grid.res);
-                gpu_set_range(a->gpu, a->cfg.grid.range);
-            }
-            app_load_palette(a);
-            app_reset(a);
-        } else {
-            if (a->gpu) gpu_set_range(a->gpu, a->cfg.grid.range);
-            app_load_palette(a);
-            if (init_changed) app_reset(a);
-        }
-        app_set_last(a, disk ? "hot.lua reloaded (disk)" : "hot.lua reloaded (embedded)");
-    } else {
-        app_set_last(a, err[0] ? err : "hot.defaults failed after reload");
-    }
-    a->use_lua = 1;
-    if (a->use_lua) lua_hot_set_kernel(a->lua, kernel_tag(a->kernel));
-    app_set_title(a, 1);
-    if (disk) platform_free(disk);
 }
 
 static void app_render_phase(App *a)
 {
     static float verts[16384 * 6];
     int w, h, grid_n = 0, total;
-    if (!a->gpu || !a->plat) return;
+    if (!a || !a->gpu || !a->plat) return;
     w = platform_width(a->plat);
     h = platform_height(a->plat);
-    gpu_draw_view(a->gpu, w, h, &a->view);
-    total = pv_build_overlay(&a->view, a->cfg.grid.range, sim_res(a->sim), w, h,
+    if (a->legacy) gpu_draw_view(a->gpu, w, h, &a->view);
+    else gpu_draw_atlas_view(a->gpu, w, h, &a->view);
+    total = pv_build_overlay(&a->view, 1.0, atlas_res(a->atlas), w, h,
                              a->selected >= 0 ? a->sel_x : -1,
                              a->selected >= 0 ? a->sel_y : -1,
                              verts, 16384, &grid_n);
@@ -614,8 +581,6 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
 {
     App *a;
     int need_display;
-    int gpu_ok = 0;
-    int force_kernel;
     char gpu_err[512];
     char lua_err[512];
 
@@ -625,42 +590,54 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     a->inst = inst;
     a->opt = *opt;
     a->selected = -1;
-    a->paused = 0;
+    exp_init(&a->exp);
+    if (opt->force_res > 0) a->exp.res = dp_clampi(opt->force_res, 16, 512);
+    if (opt->axis_x) exp_set_axis(&a->exp, 0, opt->axis_x);
+    if (opt->axis_y) exp_set_axis(&a->exp, 1, opt->axis_y);
+    {
+        int si;
+        for (si = 0; si < opt->nset; ++si) {
+            const char *sv = opt->set_values[si];
+            const char *eq = strchr(sv, '=');
+            if (eq) {
+                char nm[EXP_NAME];
+                size_t nn = (size_t)(eq - sv);
+                if (nn > 0 && nn < sizeof(nm)) {
+                    memcpy(nm, sv, nn); nm[nn] = 0;
+                    exp_set_value(&a->exp, nm, atof(eq + 1));
+                }
+            }
+        }
+    }
+    if (opt->channel) {
+        int ci;
+        for (ci = 0; ci < EXP_NCH; ++ci)
+            if (strcmp(exp_channel_name(ci), opt->channel) == 0) a->exp.channel = ci;
+    }
+    if (opt->post) {
+        if (strcmp(opt->post, "gradient") == 0) a->exp.post = 1;
+        else if (strcmp(opt->post, "range") == 0) a->exp.post = 2;
+        else if (strcmp(opt->post, "variance") == 0) a->exp.post = 3;
+    }
     pv_init(&a->view);
-    dp_config_defaults(&a->cfg);
-    app_params_from_cfg(a);
+    dp_phase_lut(a->lut);
 
-    force_kernel = opt->force_kernel;
-    need_display = !(opt->headless && force_kernel == DP_KERNEL_CPU);
+    need_display = !(opt->headless && opt->force_kernel == DP_KERNEL_CPU);
 
     {
         char *disk = NULL;
-        size_t disk_len = 0;
-        if (app_read_disk_hot(a, &disk, &disk_len)) {
+        size_t len = 0;
+        if (app_read_disk_lua(a, &disk, &len)) {
             lua_err[0] = 0;
-            a->lua = lua_hot_create(disk, disk_len, a->hot_path[0] ? a->hot_path : "double-pendulum.lua",
-                                    "gpu", a->cfg.grid.res, lua_err, sizeof(lua_err));
-            if (a->lua) {
-                a->use_lua = 1;
-                lua_err[0] = 0;
-                if (!lua_hot_defaults(a->lua, &a->cfg, lua_err, sizeof(lua_err))) {
-                    a->use_lua = 0;
-                    app_error_box(a, lua_err[0] ? lua_err : "hot.defaults failed");
-                    lua_hot_destroy(a->lua);
-                    a->lua = NULL;
-                    dp_config_defaults(&a->cfg);
-                }
-            } else {
-                app_error_box(a, lua_err[0] ? lua_err : "experiment Lua failed to load");
-            }
+            a->lua = lua_hot_create(disk, len, a->hot_path, "cpu", a->exp.res, lua_err, sizeof(lua_err));
+            if (a->lua) a->use_lua = 1;
             platform_free(disk);
         }
     }
-    if (opt->force_res > 0) a->cfg.grid.res = dp_clampi(opt->force_res, 32, 1024);
-    app_params_from_cfg(a);
+    app_load_palette(a);
 
-    a->sim = sim_create(&a->cfg, a->cfg.sim.threads, err, errsz);
-    if (!a->sim) { app_destroy(a); return NULL; }
+    a->atlas = atlas_create(&a->exp, a->exp.res, err, errsz);
+    if (!a->atlas) { app_destroy(a); return NULL; }
 
     if (need_display) {
         int side = opt->window_side;
@@ -672,17 +649,13 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
                 side = (int)((work.right - work.left) * 0.68);
             side = dp_clampi(side, 420, 740);
         }
-        a->plat = platform_create(inst, L"Phase Space", side,
-                                  opt->headless, a, app_event_cb);
+        a->plat = platform_create(inst, L"Phase Space", side, opt->headless, a, app_event_cb);
         if (!a->plat) {
             if (err) snprintf(err, errsz, "app: window creation failed");
             app_destroy(a);
             return NULL;
         }
         platform_move_client(a->plat, 16, 16);
-    }
-
-    if (need_display) {
         gpu_err[0] = 0;
         a->gpu = gpu_create(platform_hwnd(a->plat), platform_hdc(a->plat),
                             opt->force_legacy, gpu_err, sizeof(gpu_err));
@@ -691,98 +664,66 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
             app_destroy(a);
             return NULL;
         }
-        gpu_ok = gpu_compute(a->gpu);
         a->legacy = gpu_legacy(a->gpu);
         platform_set_vsync(a->plat, gpu_vsync(a->gpu));
-        gpu_set_res(a->gpu, a->cfg.grid.res);
-        gpu_set_range(a->gpu, a->cfg.grid.range);
+        gpu_set_range(a->gpu, 1.0);
 
-        {
-            int side = platform_width(a->plat);
-            a->right_x = 16 + side + 24;
-            a->right_w = dp_clampi((int)(side * 0.52), 300, 380);
-            a->pend_h = dp_clampi((int)(side * 0.42), 220, 340);
+        if (!opt->capture_path) {
+            int side_px = platform_width(a->plat);
+            a->right_x = 16 + side_px + 24;
+            a->right_w = dp_clampi((int)(side_px * 0.52), 300, 380);
+            a->pend_h = dp_clampi((int)(side_px * 0.42), 220, 340);
             a->pview = pendulum_view_create(inst, L"Double Pendulum",
                                             a->right_x, 16, a->right_w, a->pend_h,
                                             a, app_pend_close, app_pend_key);
-        }
-
-        {
-            RECT work;
-            int panel_y, panel_h;
-            PanelCallbacks cb;
-            char panel_err[512];
-            char dir[MAX_PATH], ui_path[MAX_PATH];
-            platform_exe_dir(dir, sizeof(dir));
-            snprintf(ui_path, sizeof(ui_path), "%s\\ui\\panel.tcl", dir);
-            SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-            panel_y = 16 + a->pend_h + 46;
-            panel_h = dp_clampi((int)(work.bottom - work.top) - panel_y - 16, 420, 540);
-            memset(&cb, 0, sizeof(cb));
-            cb.user = a;
-            cb.action = panel_action_cb;
-            cb.status = panel_status_cb;
-            cb.quit = panel_quit_cb;
-            panel_err[0] = 0;
-            a->panel = panel_create(&cb, ui_path,
-                                    a->right_x, panel_y, a->right_w, panel_h,
-                                    panel_err, sizeof(panel_err));
-            if (!a->panel) {
-                char logpath[MAX_PATH];
-                DWORD ln = GetTempPathA(MAX_PATH, logpath);
-                FILE *lf;
-                if (ln) {
-                    strncat(logpath, "dp-panel-error.txt", MAX_PATH - strlen(logpath) - 1);
-                    lf = fopen(logpath, "a");
-                    if (lf) {
-                        fprintf(lf, "panel failed: err=%s\n", panel_err[0] ? panel_err : "(no error)");
-                        fclose(lf);
+            {
+                RECT work;
+                int panel_y, panel_h;
+                PanelCallbacks cb;
+                char panel_err[512];
+                char dir[MAX_PATH], ui_path[MAX_PATH];
+                platform_exe_dir(dir, sizeof(dir));
+                snprintf(ui_path, sizeof(ui_path), "%s\\ui\\panel.tcl", dir);
+                SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+                panel_y = 16 + a->pend_h + 46;
+                panel_h = dp_clampi((int)(work.bottom - work.top) - panel_y - 16, 420, 540);
+                memset(&cb, 0, sizeof(cb));
+                cb.user = a;
+                cb.action = panel_action_cb;
+                cb.status = panel_status_cb;
+                cb.query = panel_query_cb;
+                cb.quit = panel_quit_cb;
+                panel_err[0] = 0;
+                a->panel = panel_create(&cb, ui_path, a->right_x, panel_y,
+                                        a->right_w, panel_h, panel_err, sizeof(panel_err));
+                if (!a->panel) {
+                    char logpath[MAX_PATH];
+                    DWORD ln = GetTempPathA(MAX_PATH, logpath);
+                    FILE *lf;
+                    if (ln) {
+                        strncat(logpath, "dp-panel-error.txt", MAX_PATH - strlen(logpath) - 1);
+                        lf = fopen(logpath, "a");
+                        if (lf) { fprintf(lf, "panel failed: %s\n", panel_err[0] ? panel_err : "(no error)"); fclose(lf); }
                     }
                 }
-                OutputDebugStringA("panel: ");
-                OutputDebugStringA(panel_err[0] ? panel_err : "create failed");
-                OutputDebugStringA("\n");
             }
         }
     }
 
-    if (force_kernel == DP_KERNEL_GPU && !gpu_ok) {
-        if (err) snprintf(err, errsz, "app: GPU compute requested but unavailable%s%s",
-                          gpu_err[0] ? ": " : "", gpu_err[0] ? gpu_err : "");
-        app_destroy(a);
-        return NULL;
-    }
-    a->kernel = (gpu_ok && force_kernel != DP_KERNEL_CPU) ? DP_KERNEL_GPU : DP_KERNEL_CPU;
-    a->steps_last = 0;
-    a->acc = 0.0;
     a->fps_t0 = platform_now();
-    a->fps_frames = 0.0;
-    a->title_t = 0.0;
-
-    app_load_palette(a);
-    if (a->use_lua) lua_hot_set_kernel(a->lua, kernel_tag(a->kernel));
-    if (a->sim) sim_set_lut(a->sim, a->lut);
-
-    sim_reset(a->sim, &a->cfg);
-    if (a->kernel == DP_KERNEL_GPU && a->gpu) {
-        gpu_upload_state(a->gpu, sim_state(a->sim), sim_res(a->sim));
-        gpu_step(a->gpu, 0, &a->params);
-    } else {
-        app_sync_display(a);
-    }
+    app_colorize(a);
     app_set_last(a, "ready");
     app_set_title(a, 1);
     return a;
 }
 
-void app_destroy(App *app)
+void app_destroy(App *a)
 {
-    App *a = app;
     if (!a) return;
     if (a->panel) panel_destroy(a->panel);
     if (a->pview) pendulum_view_destroy(a->pview);
     if (a->gpu) gpu_destroy(a->gpu);
-    if (a->sim) sim_destroy(a->sim);
+    if (a->atlas) atlas_destroy(a->atlas);
     if (a->lua) lua_hot_destroy(a->lua);
     if (a->plat) platform_destroy(a->plat);
     free(a);
@@ -792,69 +733,37 @@ int app_frame(App *a)
 {
     double dt;
     int steps = 0;
-    int max_steps;
-    char err[512];
-
-    if (!a || !a->plat || !a->sim) return 0;
+    if (!a || !a->plat || !a->atlas) return 0;
     dt = platform_dt(a->plat);
 
-    if (a->use_lua) {
-        DpParams p;
-        err[0] = 0;
-        if (lua_hot_params(a->lua, &p, &max_steps, err, sizeof(err))) {
-            a->params = p;
-        } else {
-            a->use_lua = 0;
-            app_error_box(a, err[0] ? err : "hot.params failed");
-        }
-        if (a->use_lua) {
-            err[0] = 0;
-            if (!lua_hot_tick(a->lua, dt, &steps, err, sizeof(err))) {
-                a->use_lua = 0;
-                app_error_box(a, err[0] ? err : "hot.tick failed");
-                steps = 0;
-            }
-        }
+    if (!a->exp.paused) {
+        double step = a->exp.dt > 0.0 ? a->exp.dt : 0.01;
+        int cap = dp_clampi(a->exp.max_steps, 0, DP_MAX_STEPS);
+        a->acc += dt;
+        while (a->acc >= step && steps < cap) { a->acc -= step; ++steps; }
+        if (a->acc > step) a->acc = 0.0;
     }
-
-    if (!a->use_lua) {
-        if (a->paused) {
-            steps = 0;
-        } else {
-            double step = a->params.dt > 0.0 ? a->params.dt : 0.1;
-            int cap = dp_clampi(a->cfg.sim.max_steps, 0, DP_MAX_STEPS);
-            a->acc += dt;
-            while (a->acc >= step && steps < cap) {
-                a->acc -= step;
-                steps++;
-            }
-            if (a->acc > step) a->acc = 0.0;
-        }
-    }
-
     if (steps > 0) app_advance(a, steps);
     else a->steps_last = 0;
 
     if (a->pview) {
+        DpParams pp;
+        pp.m1 = a->sel_params[0]; pp.m2 = a->sel_params[1];
+        pp.l1 = a->sel_params[2]; pp.l2 = a->sel_params[3];
+        pp.g = a->sel_params[4]; pp.damping = a->sel_params[5]; pp.dt = a->exp.dt;
         pendulum_view_set_state(a->pview, a->sel_state, a->selected >= 0,
-                                a->sel_x, a->sel_y, &a->params);
+                                a->sel_x, a->sel_y, &pp);
     }
-
     if (a->gpu) {
         app_render_phase(a);
         platform_frame_end(a->plat);
     }
-
     a->frame_count++;
     a->fps_frames += 1.0;
     {
         double now = platform_now();
         double span = now - a->fps_t0;
-        if (span >= 0.5) {
-            a->fps = a->fps_frames / span;
-            a->fps_frames = 0.0;
-            a->fps_t0 = now;
-        }
+        if (span >= 0.5) { a->fps = a->fps_frames / span; a->fps_frames = 0.0; a->fps_t0 = now; }
     }
     app_set_title(a, 0);
     return 1;
@@ -874,25 +783,15 @@ int app_loop(App *a)
 
 int app_shot(App *a, const char *path, int steps)
 {
-    int res;
-    unsigned char *rgba;
-    int ok;
-    if (!a || !a->sim || !path) return 0;
-    res = sim_res(a->sim);
-    app_advance(a, steps);
-
-    if (a->kernel == DP_KERNEL_GPU && a->gpu && gpu_compute(a->gpu)) {
-        gpu_download_state(a->gpu, sim_state(a->sim), res);
-    }
-    sim_refresh_field(a->sim);
-    rgba = (unsigned char *)malloc((size_t)res * (size_t)res * 4u);
-    if (!rgba) return 0;
-    dp_colorize(sim_field(a->sim), sim_cells(a->sim), a->lut, rgba);
-    ok = dp_write_bmp(path, rgba, res, res);
-    free(rgba);
-    if (ok) printf("shot: %s  %dx%d  steps=%d  kernel=%s  hash=%08X\n",
-                   path, res, res, steps, kernel_tag(a->kernel),
-                   (unsigned)dp_hash_bytes(sim_field(a->sim), (size_t)sim_cells(a->sim) * 4u));
+    int res, ok;
+    if (!a || !a->atlas || !path) return 0;
+    atlas_reset(a->atlas, &a->exp);
+    atlas_step(a->atlas, &a->exp, steps);
+    atlas_colorize(a->atlas, &a->exp, a->lut);
+    res = atlas_res(a->atlas);
+    ok = dp_write_bmp(path, atlas_rgba(a->atlas), res, res);
+    if (ok) printf("shot: %s  %dx%d  steps=%d  kernel=cpu  hash=%08X\n",
+                   path, res, res, steps, (unsigned)dp_hash_bytes(atlas_rgba(a->atlas), (size_t)res * res * 4u));
     return ok;
 }
 
@@ -900,7 +799,7 @@ int app_capture(App *a, const char *path, int steps)
 {
     int w, h, ok;
     unsigned char *rgba;
-    if (!a || !a->plat || !a->gpu || !a->sim || !path) return 0;
+    if (!a || !a->plat || !a->gpu || !a->atlas || !path) return 0;
     app_advance(a, steps);
     w = platform_width(a->plat);
     h = platform_height(a->plat);
@@ -910,11 +809,11 @@ int app_capture(App *a, const char *path, int steps)
     ok = gpu_capture_rgba(a->gpu, w, h, rgba);
     if (ok) ok = dp_write_bmp(path, rgba, w, h);
     free(rgba);
-    if (ok) printf("capture: %s  %dx%d  steps=%d  kernel=%s  legacy=%d  renderer=%s\n",
-                   path, w, h, steps, kernel_tag(a->kernel), a->legacy, gpu_renderer(a->gpu));
+    if (ok) printf("capture: %s  %dx%d  steps=%d  kernel=cpu  legacy=%d  renderer=%s\n",
+                   path, w, h, steps, a->legacy, gpu_renderer(a->gpu));
     return ok;
 }
 
-const char *app_kernel_text(App *a) { return a ? kernel_tag(a->kernel) : "?"; }
+const char *app_kernel_text(App *a) { (void)a; return "cpu"; }
 const char *app_gpu_info(App *a) { return (a && a->gpu) ? gpu_renderer(a->gpu) : "(none)"; }
-int app_res(App *a) { return a ? a->cfg.grid.res : 0; }
+int app_res(App *a) { return a ? a->exp.res : 0; }

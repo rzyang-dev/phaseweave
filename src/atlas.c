@@ -1,0 +1,287 @@
+/* atlas.c - CPU double-pendulum sampler; this is the reference path for the
+ * 2D map.  The GPU display currently consumes the RGBA image produced here;
+ *  a compute-shader backend can be added behind the same channels contract. */
+#include "atlas.h"
+
+#include "physics.h"
+#include "pool.h"
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct Atlas {
+    int res;
+    int cells;
+    float *cells_data;  /* per cell: state[4] + params[6] */
+    float *channels;    /* per cell: theta1, theta2, energy, omega_max */
+    unsigned char *rgba;
+    ThreadPool *pool;
+};
+
+typedef struct {
+    Atlas *a;
+    const Experiment *e;
+    int steps;
+} AtlasJob;
+
+static void channel_at(Atlas *a, int ch, int x, int y, double *v)
+{
+    int cx = x < 0 ? 0 : (x >= a->res ? a->res - 1 : x);
+    int cy = y < 0 ? 0 : (y >= a->res ? a->res - 1 : y);
+    *v = a->channels[((size_t)cy * a->res + cx) * EXP_NCH + ch];
+}
+
+static double wrap_diff(double a, double b)
+{
+    double d = a - b;
+    dp_normalize_angle(&d);
+    return d;
+}
+
+Atlas *atlas_create(const Experiment *e, int res, char *err, size_t errsz)
+{
+    Atlas *a = (Atlas *)calloc(1, sizeof(Atlas));
+    if (err && errsz) err[0] = 0;
+    if (!a) {
+        if (err) snprintf(err, errsz, "atlas: out of memory");
+        return NULL;
+    }
+    if (res < 16) res = 16;
+    if (res > 1024) res = 1024;
+    a->res = res;
+    a->cells = res * res;
+    a->cells_data = (float *)calloc((size_t)a->cells * 10u, sizeof(float));
+    a->channels = (float *)calloc((size_t)a->cells * EXP_NCH, sizeof(float));
+    a->rgba = (unsigned char *)calloc((size_t)a->cells * 4u, 1);
+    if (!a->cells_data || !a->channels || !a->rgba) {
+        atlas_destroy(a);
+        if (err) snprintf(err, errsz, "atlas: out of memory (%dx%d)", res, res);
+        return NULL;
+    }
+    a->pool = pool_create(0);
+    atlas_reset(a, e);
+    return a;
+}
+
+void atlas_destroy(Atlas *a)
+{
+    if (!a) return;
+    if (a->pool) pool_destroy(a->pool);
+    free(a->cells_data);
+    free(a->channels);
+    free(a->rgba);
+    free(a);
+}
+
+void atlas_resize(Atlas *a, int res, char *err, size_t errsz)
+{
+    if (!a) return;
+    if (res < 16) res = 16;
+    if (res > 1024) res = 1024;
+    if (res == a->res) return;
+    free(a->cells_data); free(a->channels); free(a->rgba);
+    a->res = res;
+    a->cells = res * res;
+    a->cells_data = (float *)calloc((size_t)a->cells * 10u, sizeof(float));
+    a->channels = (float *)calloc((size_t)a->cells * EXP_NCH, sizeof(float));
+    a->rgba = (unsigned char *)calloc((size_t)a->cells * 4u, 1);
+    if (!a->cells_data || !a->channels || !a->rgba) {
+        if (err) snprintf(err, errsz, "atlas: out of memory (%dx%d)", res, res);
+    }
+}
+
+void atlas_reset(Atlas *a, const Experiment *e)
+{
+    int x, y, i;
+    if (!a || !e) return;
+    for (y = 0; y < a->res; ++y) {
+        for (x = 0; x < a->res; ++x) {
+            double state[4], params[6];
+            float *c;
+            i = y * a->res + x;
+            exp_cell_state(e, x, y, state, params);
+            c = a->cells_data + (size_t)i * 10u;
+            c[0] = (float)state[0]; c[1] = (float)state[1];
+            c[2] = (float)state[2]; c[3] = (float)state[3];
+            c[4] = (float)params[0]; c[5] = (float)params[1];
+            c[6] = (float)params[2]; c[7] = (float)params[3];
+            c[8] = (float)params[4]; c[9] = (float)params[5];
+        }
+    }
+    atlas_step(a, e, 0);
+}
+
+static double cell_energy(const float *c)
+{
+    double t1 = c[0], t2 = c[1], w1 = c[2], w2 = c[3];
+    double m1 = c[4], m2 = c[5], l1 = c[6], l2 = c[7], g = c[8];
+    double ke = 0.5 * (m1 + m2) * l1 * l1 * w1 * w1
+              + 0.5 * m2 * l2 * l2 * w2 * w2
+              + m2 * l1 * l2 * w1 * w2 * cos(t1 - t2);
+    double pe = -(m1 + m2) * g * l1 * cos(t1) - m2 * g * l2 * cos(t2);
+    return ke + pe;
+}
+
+static void atlas_band(void *user, int y0, int y1)
+{
+    AtlasJob *job = (AtlasJob *)user;
+    Atlas *a = job->a;
+    const Experiment *e = job->e;
+    int x, y, s;
+    for (y = y0; y < y1; ++y) {
+        for (x = 0; x < a->res; ++x) {
+            int i = y * a->res + x;
+            float *c = a->cells_data + (size_t)i * 10u;
+            double state[4];
+            DpParams p;
+            state[0] = c[0]; state[1] = c[1]; state[2] = c[2]; state[3] = c[3];
+            p.m1 = c[4]; p.m2 = c[5]; p.l1 = c[6]; p.l2 = c[7];
+            p.g = c[8]; p.damping = c[9]; p.dt = e->dt > 0.0 ? e->dt : 0.01;
+            for (s = 0; s < job->steps; ++s) {
+                dp_rk4_step(state, &p);
+                if (!(state[0] == state[0]) || !(state[1] == state[1]) ||
+                    !(state[2] == state[2]) || !(state[3] == state[3])) {
+                    state[0] = state[1] = state[2] = state[3] = 0.0;
+                }
+            }
+            c[0] = (float)state[0]; c[1] = (float)state[1];
+            c[2] = (float)state[2]; c[3] = (float)state[3];
+            a->channels[(size_t)i * EXP_NCH + 0] = (float)state[0];
+            a->channels[(size_t)i * EXP_NCH + 1] = (float)state[1];
+            a->channels[(size_t)i * EXP_NCH + 2] = (float)cell_energy(c);
+            a->channels[(size_t)i * EXP_NCH + 3] =
+                (float)(fabs(state[2]) > fabs(state[3]) ? fabs(state[2]) : fabs(state[3]));
+        }
+    }
+}
+
+void atlas_step(Atlas *a, const Experiment *e, int steps)
+{
+    AtlasJob job;
+    if (!a || !e) return;
+    if (steps < 0) steps = 0;
+    job.a = a; job.e = e; job.steps = steps;
+    if (a->pool) pool_run(a->pool, atlas_band, &job, a->res);
+    else atlas_band(&job, 0, a->res);
+}
+
+static double post_value(Atlas *a, int ch, int cyclic, int x, int y, int post)
+{
+    if (post == 1) {
+        double tl, tr, bl, br, tc, bc, ml, mr, gx, gy;
+        channel_at(a, ch, x - 1, y - 1, &tl);
+        channel_at(a, ch, x + 1, y - 1, &tr);
+        channel_at(a, ch, x - 1, y + 1, &bl);
+        channel_at(a, ch, x + 1, y + 1, &br);
+        channel_at(a, ch, x,     y - 1, &tc);
+        channel_at(a, ch, x,     y + 1, &bc);
+        channel_at(a, ch, x - 1, y,     &ml);
+        channel_at(a, ch, x + 1, y,     &mr);
+        if (cyclic) {
+            gx = (wrap_diff(tr, tl) + 2.0 * wrap_diff(mr, ml) + wrap_diff(br, bl)) / 8.0;
+            gy = (wrap_diff(bl, tl) + 2.0 * wrap_diff(bc, tc) + wrap_diff(br, tr)) / 8.0;
+        } else {
+            gx = (tr - tl + 2.0 * (mr - ml) + br - bl) / 8.0;
+            gy = (bl - tl + 2.0 * (bc - tc) + br - tr) / 8.0;
+        }
+        return sqrt(gx * gx + gy * gy);
+    }
+    if (post == 2) {
+        double mn = 1e300, mx = -1e300;
+        int dx, dy;
+        for (dy = -1; dy <= 1; ++dy) {
+            for (dx = -1; dx <= 1; ++dx) {
+                double q;
+                channel_at(a, ch, x + dx, y + dy, &q);
+                if (q < mn) mn = q;
+                if (q > mx) mx = q;
+            }
+        }
+        return mx - mn;
+    }
+    {
+        double sum = 0.0, sum2 = 0.0;
+        int dx, dy, n = 0;
+        for (dy = -1; dy <= 1; ++dy) {
+            for (dx = -1; dx <= 1; ++dx) {
+                double q;
+                channel_at(a, ch, x + dx, y + dy, &q);
+                sum += q; sum2 += q * q; ++n;
+            }
+        }
+        return sqrt(fabs(sum2 / n - (sum / n) * (sum / n)));
+    }
+}
+
+void atlas_colorize(Atlas *a, const Experiment *e, const unsigned char *lut)
+{
+    ExpChannelInfo ci;
+    int x, y, ch;
+    double low, high, span;
+    double pmin = 1e300, pmax = -1e300;
+    if (!a || !e || !lut) return;
+    ch = e->channel;
+    if (ch < 0 || ch >= EXP_NCH) ch = 0;
+    exp_channel_info(e, ch, &ci);
+    low = ci.min; high = ci.max;
+    span = high - low;
+    if (fabs(span) < 1e-9) span = 1.0;
+
+    if (e->post != 0) {
+        for (y = 0; y < a->res; ++y) {
+            for (x = 0; x < a->res; ++x) {
+                double v = post_value(a, ch, ci.cyclic, x, y, e->post);
+                if (v == v) {
+                    if (v < pmin) pmin = v;
+                    if (v > pmax) pmax = v;
+                }
+            }
+        }
+        if (!(pmin < pmax)) { pmin = 0.0; pmax = 1.0; }
+    }
+
+    for (y = 0; y < a->res; ++y) {
+        for (x = 0; x < a->res; ++x) {
+            int i = y * a->res + x;
+            double u;
+            if (e->post == 0) {
+                double v = a->channels[(size_t)i * EXP_NCH + ch];
+                u = (v - low) / span;
+                if (ci.cyclic) u = u - floor(u);
+            } else {
+                double v = post_value(a, ch, ci.cyclic, x, y, e->post);
+                u = (v - pmin) / (pmax - pmin);
+            }
+            if (!(u == u)) u = 0.0;
+            if (ci.cyclic) u = u - floor(u);
+            else if (u < 0.0) u = 0.0;
+            else if (u > 1.0) u = 1.0;
+            {
+                int idx = (int)(u * (double)(DP_LUT_N - 1) + 0.5);
+                if (idx < 0) idx = 0;
+                if (idx >= DP_LUT_N) idx = DP_LUT_N - 1;
+                a->rgba[(size_t)i * 4u + 0] = lut[idx * 3 + 0];
+                a->rgba[(size_t)i * 4u + 1] = lut[idx * 3 + 1];
+                a->rgba[(size_t)i * 4u + 2] = lut[idx * 3 + 2];
+                a->rgba[(size_t)i * 4u + 3] = 255;
+            }
+        }
+    }
+}
+
+int atlas_res(const Atlas *a) { return a ? a->res : 0; }
+int atlas_cells(const Atlas *a) { return a ? a->cells : 0; }
+int atlas_threads(const Atlas *a) { return a && a->pool ? pool_threads(a->pool) : 0; }
+const unsigned char *atlas_rgba(const Atlas *a) { return a ? a->rgba : NULL; }
+
+void atlas_read_cell(const Atlas *a, int index, float state[4], float params[6], float ch[4])
+{
+    const float *c;
+    if (!a || !state || !params || !ch || index < 0 || index >= a->cells) return;
+    c = a->cells_data + (size_t)index * 10u;
+    memcpy(state, c, 4u * sizeof(float));
+    memcpy(params, c + 4, 6u * sizeof(float));
+    memcpy(ch, a->channels + (size_t)index * EXP_NCH, 4u * sizeof(float));
+}

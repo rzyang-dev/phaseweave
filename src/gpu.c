@@ -36,6 +36,11 @@ struct Gpu {
     GLuint line_vao;
     GLuint line_vbo;
 
+    GLuint atlas_tex;
+    GLuint atlas_prog;
+    GLint  u_atlas_tex, u_atlas_center, u_atlas_span, u_atlas_periodic;
+    int    atlas_res;
+
     GLint u_res, u_steps;
     GLint u_m1, u_m2, u_l1, u_l2, u_g, u_damp, u_dt;
     GLint u_field, u_lut;
@@ -382,6 +387,45 @@ void gpu_draw(Gpu *g, int w, int h)
     gpu_draw_view(g, w, h, &v);
 }
 
+void gpu_upload_atlas_rgba(Gpu *g, const unsigned char *rgba, int res)
+{
+    if (!g || !rgba || res <= 0) return;
+    if (!g->modern) return;
+    if (!g->atlas_tex || g->atlas_res != res) {
+        if (g->atlas_tex) g->gl.DeleteTextures(1, &g->atlas_tex);
+        g->gl.GenTextures(1, &g->atlas_tex);
+        g->gl.BindTexture(GL_TEXTURE_2D, g->atlas_tex);
+        g->gl.TexStorage2D(GL_TEXTURE_2D, 1, DP_GL_RGBA8, res, res);
+        g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        g->gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        g->atlas_res = res;
+    } else {
+        g->gl.BindTexture(GL_TEXTURE_2D, g->atlas_tex);
+    }
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    g->gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, res, res,
+                        GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+}
+
+void gpu_draw_atlas_view(Gpu *g, int w, int h, const PhaseView *v)
+{
+    if (!g || !g->modern || !v || !g->atlas_prog || !g->atlas_tex) return;
+    glViewport(0, 0, w, h);
+    glClearColor(0.035f, 0.045f, 0.055f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    g->gl.UseProgram(g->atlas_prog);
+    g->gl.ActiveTexture(GL_TEXTURE0);
+    g->gl.BindTexture(GL_TEXTURE_2D, g->atlas_tex);
+    g->gl.Uniform1i(g->u_atlas_tex, 0);
+    g->gl.Uniform2f(g->u_atlas_center, (GLfloat)v->cx, (GLfloat)v->cy);
+    setf(g, g->u_atlas_span, (float)(1.0 / (v->zoom > 0.0 ? v->zoom : 1.0)));
+    g->gl.Uniform1i(g->u_atlas_periodic, v->periodic ? 1 : 0);
+    g->gl.BindVertexArray(g->vao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+}
+
 void gpu_draw_lines(Gpu *g, const float *verts, int nverts, float width)
 {
     int i;
@@ -556,6 +600,21 @@ static int build_modern(Gpu *g, char *err, size_t errsz)
         g->line_prog = link_program(g, vs, fs, "line program", err, errsz);
         if (!g->line_prog) return 0;
     }
+    {
+        GLuint vs = compile_shader(g, DP_GL_VERTEX_SHADER, DP_SHADER_VERT,
+                                   "atlas.vert", err, errsz);
+        GLuint fs;
+        if (!vs) return 0;
+        fs = compile_shader(g, DP_GL_FRAGMENT_SHADER, DP_SHADER_ATLAS_FRAG,
+                            "atlas.frag", err, errsz);
+        if (!fs) { g->gl.DeleteShader(vs); return 0; }
+        g->atlas_prog = link_program(g, vs, fs, "atlas program", err, errsz);
+        if (!g->atlas_prog) return 0;
+    }
+    if (!g->vao) {
+        g->gl.GenVertexArrays(1, &g->vao);
+        g->gl.BindVertexArray(g->vao);
+    }
     g->gl.GenVertexArrays(1, &g->line_vao);
     g->gl.BindVertexArray(g->line_vao);
     g->gl.GenBuffers(1, &g->line_vbo);
@@ -581,6 +640,15 @@ static int build_modern(Gpu *g, char *err, size_t errsz)
     g->u_range_min = g->gl.GetUniformLocation(g->draw_prog, "uRangeMin");
     g->u_range = g->gl.GetUniformLocation(g->draw_prog, "uRange");
     g->u_periodic = g->gl.GetUniformLocation(g->draw_prog, "uPeriodic");
+    g->u_atlas_tex = g->gl.GetUniformLocation(g->atlas_prog, "uAtlas");
+    g->u_atlas_center = g->gl.GetUniformLocation(g->atlas_prog, "uCenter");
+    g->u_atlas_span = g->gl.GetUniformLocation(g->atlas_prog, "uSpan");
+    g->u_atlas_periodic = g->gl.GetUniformLocation(g->atlas_prog, "uPeriodic");
+    if (g->u_atlas_tex < 0 || g->u_atlas_center < 0 || g->u_atlas_span < 0 ||
+        g->u_atlas_periodic < 0) {
+        snprintf(err, errsz, "atlas shader uniforms were optimized out");
+        return 0;
+    }
     if (g->u_res < 0 || g->u_steps < 0 || g->u_field < 0 || g->u_lut < 0 ||
         g->u_center < 0 || g->u_span < 0 || g->u_range_min < 0 ||
         g->u_range < 0 || g->u_periodic < 0) {
@@ -697,6 +765,8 @@ void gpu_destroy(Gpu *g)
         if (g->draw_prog) g->gl.DeleteProgram(g->draw_prog);
         if (g->line_prog) g->gl.DeleteProgram(g->line_prog);
         if (g->line_vbo) g->gl.DeleteBuffers(1, &g->line_vbo);
+    if (g->atlas_tex) g->gl.DeleteTextures(1, &g->atlas_tex);
+    if (g->atlas_prog) g->gl.DeleteProgram(g->atlas_prog);
         if (g->vao) g->gl.DeleteVertexArrays(1, &g->vao);
         if (g->line_vao) g->gl.DeleteVertexArrays(1, &g->line_vao);
     }

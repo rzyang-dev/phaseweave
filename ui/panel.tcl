@@ -1,7 +1,8 @@
-# panel.tcl - Tcl/Tk 控制面板（编进 exe 的 1002 RCDATA）
-# 所有键盘快捷键都在这里有对应控件；键盘只是快捷方式。
+# panel.tcl - schema-driven control panel for the experiment atlas
+# C exposes: dp_action, dp_status, dp_query, dp_quit.
+# Parameters and axes are queried from the experiment; no Lua reload for values.
 
-if {![info exists ::panelW]} { set ::panelW 364; set ::panelH 460; set ::panelX 740; set ::panelY 340 }
+if {![info exists ::panelW]} { set ::panelW 364; set ::panelH 540; set ::panelX 740; set ::panelY 340 }
 wm title . "Control Panel"
 wm resizable . 1 1
 wm minsize . 364 420
@@ -10,6 +11,7 @@ catch {ttk::style theme use clam}
 ttk::style configure TButton -padding {6 2}
 ttk::style configure TCheckbutton -padding {1 1}
 ttk::style configure TCombobox -padding {2 1}
+ttk::style configure TNotebook.Tab -padding {8 3}
 
 font create DpTitle -family "Segoe UI" -size 11 -weight bold
 font create DpHead  -family "Segoe UI" -size 8 -weight bold
@@ -19,118 +21,270 @@ font create DpMono  -family "Consolas" -size 9
 
 set ::busy 0
 set ::last ""
-set ::vGrid 1
-set ::vPeriodic 0
-set ::vCircle 1
+set ::params {}
+set ::channels {}
+set ::axes {}
+set ::view {}
 set ::s(last) ""
 
-ttk::frame .f -padding {10 8 10 8}
+ttk::frame .f -padding {8 6 8 6}
 pack .f -fill both -expand 1
 grid columnconfigure .f 0 -weight 1
+grid rowconfigure .f 1 -weight 1
 
-ttk::label .f.title -text "Double Pendulum Phase Space" -font DpTitle -anchor w
+ttk::label .f.title -text "Dynamical Systems Atlas" -font DpTitle -anchor w
 grid .f.title -row 0 -column 0 -sticky ew
-ttk::label .f.sub -text "phase space · pendulum · hot logic" -font DpSmall -foreground "#666" -anchor w
-grid .f.sub -row 1 -column 0 -sticky ew -pady {0 4}
-ttk::separator .f.sep0 -orient horizontal
-grid .f.sep0 -row 2 -column 0 -sticky ew -pady 2
 
-ttk::frame .f.sim
-grid .f.sim -row 3 -column 0 -sticky ew -pady 2
-ttk::button .f.sim.pause -text "Pause" -command {act pause} -takefocus 0
-ttk::button .f.sim.reset -text "Reset" -command {act reset} -takefocus 0
-ttk::button .f.sim.quit -text "Quit" -command {dp_quit} -takefocus 0
-grid .f.sim.pause -row 0 -column 0 -sticky ew -padx {0 3}
-grid .f.sim.reset -row 0 -column 1 -sticky ew -padx 3
-grid .f.sim.quit -row 0 -column 2 -sticky ew -padx {3 0}
-grid columnconfigure .f.sim 0 -weight 1
-grid columnconfigure .f.sim 1 -weight 1
-grid columnconfigure .f.sim 2 -weight 1
+ttk::notebook .f.nb
+grid .f.nb -row 1 -column 0 -sticky nsew -pady {4 2}
 
-ttk::frame .f.comp
-grid .f.comp -row 4 -column 0 -sticky ew -pady 4
-ttk::label .f.comp.kl -text "Kernel" -font DpBody -anchor w
-ttk::combobox .f.comp.kc -state readonly -values {"GPU compute" "Fortran CPU"} -width 16 -takefocus 0
-ttk::label .f.comp.pl -text "Palette" -font DpBody -anchor w
-ttk::combobox .f.comp.pc -state readonly -values {phase ember ice mono} -width 16 -takefocus 0
-grid .f.comp.kl -row 0 -column 0 -sticky w -pady 1
-grid .f.comp.kc -row 0 -column 1 -sticky ew -pady 1
-grid .f.comp.pl -row 1 -column 0 -sticky w -pady 1
-grid .f.comp.pc -row 1 -column 1 -sticky ew -pady 1
-grid columnconfigure .f.comp 1 -weight 1
-bind .f.comp.kc <<ComboboxSelected>> {act kernel_set [expr {[.f.comp.kc current] == 0 ? "gpu" : "cpu"}]}
-bind .f.comp.pc <<ComboboxSelected>> {act palette_set [lindex {phase ember ice mono} [.f.comp.pc current]]}
+# ---------------------------------------------------------------- View tab
+ttk::frame .f.nb.view -padding 8
+ttk::frame .f.nb.view.actions
+grid .f.nb.view.actions -row 0 -column 0 -columnspan 2 -sticky ew
+ttk::button .f.nb.view.actions.pause -text "Pause" -command {act pause} -takefocus 0
+ttk::button .f.nb.view.actions.reset -text "Reset" -command {act reset} -takefocus 0
+ttk::button .f.nb.view.actions.quit -text "Quit" -command {dp_quit} -takefocus 0
+grid .f.nb.view.actions.pause -row 0 -column 0 -sticky ew -padx {0 3}
+grid .f.nb.view.actions.reset -row 0 -column 1 -sticky ew -padx 3
+grid .f.nb.view.actions.quit -row 0 -column 2 -sticky ew -padx {3 0}
+grid columnconfigure .f.nb.view.actions 0 -weight 1
+grid columnconfigure .f.nb.view.actions 1 -weight 1
+grid columnconfigure .f.nb.view.actions 2 -weight 1
 
-ttk::separator .f.sep1 -orient horizontal
-grid .f.sep1 -row 5 -column 0 -sticky ew -pady 2
+ttk::label .f.nb.view.cl -text "Color by" -font DpBody -anchor w
+ttk::combobox .f.nb.view.ch -state readonly -width 16 -takefocus 0
+ttk::label .f.nb.view.vl -text "View" -font DpBody -anchor w
+ttk::combobox .f.nb.view.post -state readonly -values {raw gradient range variance} -width 12 -takefocus 0
+ttk::label .f.nb.view.pl -text "Palette" -font DpBody -anchor w
+ttk::combobox .f.nb.view.pal -state readonly -values {phase ember ice mono} -width 16 -takefocus 0
+grid .f.nb.view.cl -row 1 -column 0 -sticky w -pady 2
+grid .f.nb.view.ch -row 1 -column 1 -sticky ew -pady 2
+grid .f.nb.view.vl -row 2 -column 0 -sticky w -pady 2
+grid .f.nb.view.post -row 2 -column 1 -sticky ew -pady 2
+grid .f.nb.view.pl -row 3 -column 0 -sticky w -pady 2
+grid .f.nb.view.pal -row 3 -column 1 -sticky ew -pady 2
+grid columnconfigure .f.nb.view 1 -weight 1
+bind .f.nb.view.ch <<ComboboxSelected>> {act channel_set [.f.nb.view.ch get]}
+bind .f.nb.view.post <<ComboboxSelected>> {act post_set [.f.nb.view.post get]}
+bind .f.nb.view.pal <<ComboboxSelected>> {act palette_set [.f.nb.view.pal get]}
 
-ttk::label .f.vh -text "View" -font DpHead -foreground "#555" -anchor w
-grid .f.vh -row 6 -column 0 -sticky ew -pady {2 0}
-ttk::frame .f.view
-grid .f.view -row 7 -column 0 -sticky ew -pady 1
-ttk::checkbutton .f.view.g -text "Grid" -variable ::vGrid -command {act grid $::vGrid} -takefocus 0
-ttk::checkbutton .f.view.p -text "Periodic" -variable ::vPeriodic -command {act periodic $::vPeriodic} -takefocus 0
-ttk::checkbutton .f.view.c -text "Circle" -variable ::vCircle -command {act circle $::vCircle} -takefocus 0
-grid .f.view.g -row 0 -column 0 -sticky w
-grid .f.view.p -row 0 -column 1 -sticky w -padx 6
-grid .f.view.c -row 0 -column 2 -sticky w
-ttk::button .f.view.reset -text "Reset view" -command {act view_reset} -takefocus 0
-grid .f.view.reset -row 1 -column 0 -columnspan 3 -sticky w -pady {3 0}
+ttk::frame .f.nb.view.checks
+grid .f.nb.view.checks -row 4 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+ttk::checkbutton .f.nb.view.checks.g -text "Grid" -variable ::vGrid -command {act grid $::vGrid} -takefocus 0
+ttk::checkbutton .f.nb.view.checks.p -text "Periodic" -variable ::vPeriodic -command {act periodic $::vPeriodic} -takefocus 0
+ttk::checkbutton .f.nb.view.checks.c -text "Circle" -variable ::vCircle -command {act circle $::vCircle} -takefocus 0
+grid .f.nb.view.checks.g -row 0 -column 0 -sticky w
+grid .f.nb.view.checks.p -row 0 -column 1 -sticky w -padx 6
+grid .f.nb.view.checks.c -row 0 -column 2 -sticky w
+ttk::button .f.nb.view.rv -text "Reset view" -command {act view_reset} -takefocus 0
+grid .f.nb.view.rv -row 5 -column 0 -columnspan 2 -sticky w -pady {4 0}
+ttk::frame .f.nb.view.presets
+grid .f.nb.view.presets -row 6 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+ttk::button .f.nb.view.presets.a -text "Angle map" -command {preset angles} -takefocus 0
+ttk::button .f.nb.view.presets.m -text "Mass map" -command {preset masses} -takefocus 0
+grid .f.nb.view.presets.a -row 0 -column 0 -sticky ew -padx {0 3}
+grid .f.nb.view.presets.m -row 0 -column 1 -sticky ew -padx {3 0}
+grid columnconfigure .f.nb.view.presets 0 -weight 1
+grid columnconfigure .f.nb.view.presets 1 -weight 1
 
-ttk::separator .f.sep2 -orient horizontal
-grid .f.sep2 -row 8 -column 0 -sticky ew -pady 2
+ttk::label .f.nb.view.hint -text "Mouse: drag=pan, wheel=zoom, right-click=pick. Keyboard: R Space C G P O 0 F5 Esc." -font DpSmall -foreground "#555" -wraplength 320 -justify left
+grid .f.nb.view.hint -row 7 -column 0 -columnspan 2 -sticky ew -pady {12 0}
 
-ttk::label .f.hh -text "Hot logic (Lua)" -font DpHead -foreground "#555" -anchor w
-grid .f.hh -row 9 -column 0 -sticky ew -pady {2 0}
-ttk::label .f.hot_src -text "Source: embedded" -font DpSmall -foreground "#333" -anchor w -justify left -wraplength 330
-grid .f.hot_src -row 10 -column 0 -sticky ew
-ttk::frame .f.hot_row
-grid .f.hot_row -row 11 -column 0 -sticky ew -pady 2
-ttk::button .f.hot_row.reload -text "Reload hot.lua (F5)" -command {act reload} -takefocus 0
-grid .f.hot_row.reload -row 0 -column 0 -sticky w
-ttk::label .f.hot_row.hint -text "hot.lua next to exe -> Reload" -font DpSmall -foreground "#666" -wraplength 150 -justify left
-grid .f.hot_row.hint -row 0 -column 1 -sticky w -padx 6
+# ---------------------------------------------------------- Parameters tab
+ttk::frame .f.nb.par -padding 8
+ttk::label .f.nb.par.axl -text "X axis" -font DpBody -anchor w
+ttk::combobox .f.nb.par.ax -state readonly -width 14 -takefocus 0
+ttk::label .f.nb.par.ayl -text "Y axis" -font DpBody -anchor w
+ttk::combobox .f.nb.par.ay -state readonly -width 14 -takefocus 0
+grid .f.nb.par.axl -row 0 -column 0 -sticky w
+grid .f.nb.par.ax -row 0 -column 1 -sticky ew
+grid .f.nb.par.ayl -row 1 -column 0 -sticky w
+grid .f.nb.par.ay -row 1 -column 1 -sticky ew
+grid columnconfigure .f.nb.par 1 -weight 1
+bind .f.nb.par.ax <<ComboboxSelected>> {set_axis x}
+bind .f.nb.par.ay <<ComboboxSelected>> {set_axis y}
 
-ttk::separator .f.sep3 -orient horizontal
-grid .f.sep3 -row 12 -column 0 -sticky ew -pady 2
+ttk::frame .f.nb.par.ranges
+grid .f.nb.par.ranges -row 2 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+ttk::label .f.nb.par.ranges.xl -text "X min/max" -font DpSmall -anchor w
+ttk::entry .f.nb.par.ranges.x0 -textvariable ::xmin -width 8 -takefocus 0
+ttk::entry .f.nb.par.ranges.x1 -textvariable ::xmax -width 8 -takefocus 0
+ttk::label .f.nb.par.ranges.yl -text "Y min/max" -font DpSmall -anchor w
+ttk::entry .f.nb.par.ranges.y0 -textvariable ::ymin -width 8 -takefocus 0
+ttk::entry .f.nb.par.ranges.y1 -textvariable ::ymax -width 8 -takefocus 0
+grid .f.nb.par.ranges.xl -row 0 -column 0 -sticky w
+grid .f.nb.par.ranges.x0 -row 0 -column 1 -sticky w
+grid .f.nb.par.ranges.x1 -row 0 -column 2 -sticky w
+grid .f.nb.par.ranges.yl -row 1 -column 0 -sticky w
+grid .f.nb.par.ranges.y0 -row 1 -column 1 -sticky w
+grid .f.nb.par.ranges.y1 -row 1 -column 2 -sticky w
 
+ttk::frame .f.nb.par.integ
+grid .f.nb.par.integ -row 3 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+ttk::label .f.nb.par.integ.rl -text "Res" -font DpSmall -anchor w
+ttk::entry .f.nb.par.integ.re -textvariable ::res -width 5 -takefocus 0
+ttk::label .f.nb.par.integ.dl -text "dt" -font DpSmall -anchor w
+ttk::entry .f.nb.par.integ.de -textvariable ::dt -width 6 -takefocus 0
+ttk::label .f.nb.par.integ.sl -text "Steps/frame" -font DpSmall -anchor w
+ttk::entry .f.nb.par.integ.se -textvariable ::steps -width 4 -takefocus 0
+grid .f.nb.par.integ.rl -row 0 -column 0 -sticky w
+grid .f.nb.par.integ.re -row 0 -column 1 -sticky w
+grid .f.nb.par.integ.dl -row 0 -column 2 -sticky w -padx {6 0}
+grid .f.nb.par.integ.de -row 0 -column 3 -sticky w
+grid .f.nb.par.integ.sl -row 1 -column 0 -sticky w
+grid .f.nb.par.integ.se -row 1 -column 1 -sticky w
+
+ttk::frame .f.nb.par.plist
+grid .f.nb.par.plist -row 4 -column 0 -columnspan 2 -sticky nsew -pady {6 0}
+grid columnconfigure .f.nb.par.plist 1 -weight 1
+grid rowconfigure .f.nb.par 4 -weight 1
+
+ttk::frame .f.nb.par.buttons
+grid .f.nb.par.buttons -row 5 -column 0 -columnspan 2 -sticky ew -pady {4 0}
+ttk::button .f.nb.par.buttons.apply -text "Apply parameters" -command {apply_params} -takefocus 0
+grid .f.nb.par.buttons.apply -row 0 -column 0 -sticky w
+
+# -------------------------------------------------------------- Script tab
+ttk::frame .f.nb.script -padding 8
+ttk::label .f.nb.script.h -text "Experiment script" -font DpHead -foreground "#555" -anchor w
+ttk::label .f.nb.script.src -text "experiments/double-pendulum.lua" -font DpSmall -foreground "#333" -anchor w -justify left -wraplength 320
+ttk::button .f.nb.script.reload -text "Reload palette (F5)" -command {act reload} -takefocus 0
+ttk::label .f.nb.script.hint -text "The model is built in for this milestone. Parameters and axes are applied from the Parameters tab; reload only refreshes the palette script." -font DpSmall -foreground "#666" -wraplength 320 -justify left
+ttk::label .f.nb.script.ch -text "Channels: theta1, theta2, energy, omega_max" -font DpSmall -foreground "#555" -wraplength 320 -justify left
+grid .f.nb.script.h -row 0 -column 0 -sticky ew
+grid .f.nb.script.src -row 1 -column 0 -sticky ew -pady {2 6}
+grid .f.nb.script.reload -row 2 -column 0 -sticky w
+grid .f.nb.script.hint -row 3 -column 0 -sticky ew -pady {8 0}
+grid .f.nb.script.ch -row 4 -column 0 -sticky ew -pady {8 0}
+
+# --------------------------------------------------------------- status bar
 ttk::frame .f.stat
-grid .f.stat -row 13 -column 0 -sticky ew
-ttk::label .f.stat.line1 -text "GPU compute | 0 fps | 0x0" -font DpMono -anchor w
-ttk::label .f.stat.line2 -text "Selected: none    Zoom: 1.00x" -font DpMono -anchor w
-ttk::label .f.stat.line3 -text "Palette: phase" -font DpMono -anchor w
+grid .f.stat -row 2 -column 0 -sticky ew
+ttk::label .f.stat.line1 -text "CPU (C) | 0 fps | 0x0" -font DpMono -anchor w
+ttk::label .f.stat.line2 -text "Selected: none | Zoom: 1.00x" -font DpMono -anchor w
+ttk::label .f.stat.line3 -text "theta1 | raw" -font DpMono -anchor w
+ttk::label .f.stat.last -text "Last: ready" -font DpSmall -foreground "#333" -anchor w -wraplength 330 -justify left
 grid .f.stat.line1 -row 0 -column 0 -sticky ew
 grid .f.stat.line2 -row 1 -column 0 -sticky ew
 grid .f.stat.line3 -row 2 -column 0 -sticky ew
+grid .f.stat.last -row 3 -column 0 -sticky ew -pady {2 0}
 
-ttk::separator .f.sep4 -orient horizontal
-grid .f.sep4 -row 14 -column 0 -sticky ew -pady 2
+.f.nb add .f.nb.view -text "View"
+.f.nb add .f.nb.par -text "Parameters"
+.f.nb add .f.nb.script -text "Script"
+.f.nb select .f.nb.view
 
-ttk::label .f.short -text "R reset   Space pause   C palette   K kernel\nF5 reload   G grid   P periodic   O circle   0 view   Esc quit" -font DpSmall -foreground "#555" -justify left -anchor w
-grid .f.short -row 15 -column 0 -sticky ew
-
-ttk::label .f.last -text "Last: ready" -font DpSmall -foreground "#333" -anchor w -wraplength 330 -justify left
-grid .f.last -row 16 -column 0 -sticky ew -pady {2 2}
+proc call {name {value ""}} {
+    set m [dp_action $name $value]
+    if {$m ne ""} { set ::last $m }
+    return $m
+}
 
 proc update_ui {} {
     if {$::busy} return
     set ::busy 1
     array unset ::s
     array set ::s [dp_status]
-    .f.sim.pause configure -text [expr {$::s(paused) ? "Resume" : "Pause"}]
-    .f.comp.kc current [expr {$::s(kernel) eq "gpu" ? 0 : 1}]
-    set pi [lsearch -exact {phase ember ice mono} $::s(scheme)]
-    if {$pi >= 0} { .f.comp.pc current $pi }
+    .f.nb.view.actions.pause configure -text [expr {$::s(paused) ? "Resume" : "Pause"}]
     set ::vGrid $::s(grid)
     set ::vPeriodic $::s(periodic)
     set ::vCircle $::s(circle)
     .f.stat.line1 configure -text "$::s(kernel_label)  |  $::s(fps) fps  |  $::s(res)x$::s(res)"
-    .f.stat.line2 configure -text "Selected: $::s(sel)    Zoom: $::s(zoom)x"
-    .f.stat.line3 configure -text "Palette: $::s(scheme)"
-    .f.hot_src configure -text "Source: $::s(source)"
+    .f.stat.line2 configure -text "Selected: $::s(sel)  |  Zoom: $::s(zoom)x"
+    if {[catch {set v [dp_query view]}] == 0} {
+        lassign $v ch post pal
+        .f.nb.view.ch set $ch
+        .f.nb.view.post set $post
+        .f.nb.view.pal set $pal
+        .f.stat.line3 configure -text "$ch  |  $post"
+    }
     if {$::s(last) ne ""} { set ::last $::s(last) }
-    .f.last configure -text "Last: $::last"
+    .f.stat.last configure -text "Last: $::last"
     set ::busy 0
+}
+
+proc rebuild_schema {} {
+    set ::params [dp_query params]
+    set ::axes [dp_query axes]
+    set ::channels [dp_query channels]
+    set names {}
+    foreach p $::params {
+        if {[lindex $p 6]} { lappend names [lindex $p 0] }
+    }
+    .f.nb.par.ax configure -values $names
+    .f.nb.par.ay configure -values $names
+    if {[catch {set ig [dp_query integration]}] == 0} {
+        lassign $ig res dt steps
+        set ::res $res; set ::dt $dt; set ::steps $steps
+    }
+    lassign $::axes ax ay xmin xmax ymin ymax
+    .f.nb.par.ax set $ax
+    .f.nb.par.ay set $ay
+    set ::xmin $xmin; set ::xmax $xmax; set ::ymin $ymin; set ::ymax $ymax
+    set chnames {}
+    foreach c $::channels { lappend chnames [lindex $c 0] }
+    .f.nb.view.ch configure -values $chnames
+    foreach w [winfo children .f.nb.par.plist] { destroy $w }
+    array unset ::pv
+    set r 0
+    set col 0
+    set idx 0
+    foreach p $::params {
+        lassign $p name label value pmin pmax step axis group
+        set ::pv($name) $value
+        ttk::label .f.nb.par.plist.l$idx -text $label -font DpBody -anchor w
+        ttk::entry .f.nb.par.plist.e$idx -textvariable ::pv($name) -width 9 -takefocus 0
+        grid .f.nb.par.plist.l$idx -row $r -column [expr {$col * 2}] -sticky w -pady 1
+        grid .f.nb.par.plist.e$idx -row $r -column [expr {$col * 2 + 1}] -sticky ew -pady 1 -padx {0 6}
+        incr idx
+        incr col
+        if {$col >= 2} { set col 0; incr r }
+    }
+    grid columnconfigure .f.nb.par.plist 1 -weight 1
+    grid columnconfigure .f.nb.par.plist 3 -weight 1
+    update_ui
+}
+
+proc apply_params {} {
+    foreach p $::params {
+        set name [lindex $p 0]
+        if {[catch {set v [expr {double($::pv($name))}]}]} {
+            set ::last "$name: invalid number"
+            return
+        }
+        call param_set "$name=$v"
+    }
+    if {[catch {set a [expr {double($::xmin)}]}] || [catch {set b [expr {double($::xmax)}]} ||
+        [catch {set c [expr {double($::ymin)}]}] || [catch {set d [expr {double($::ymax)}]}]} {
+        set ::last "range: invalid number"
+        return
+    }
+    call range_set "x=$a,$b"
+    call range_set "y=$c,$d"
+    if {[catch {set rv [expr {int($::res)}]}] == 0} { call res_set $rv }
+    if {[catch {set dv [expr {double($::dt)}]}] == 0} { call dt_set $dv }
+    if {[catch {set sv [expr {int($::steps)}]}] == 0} { call steps_set $sv }
+    call apply
+    update_ui
+}
+
+proc set_axis {which} {
+    if {$which eq "x"} { set name [.f.nb.par.ax get] } else { set name [.f.nb.par.ay get] }
+    call axis_set "$which=$name"
+    rebuild_schema
+}
+
+proc preset {which} {
+    call preset $which
+    rebuild_schema
+    update_ui
+}
+
+proc act {name {value ""}} {
+    call $name $value
+    focus .
+    update_ui
 }
 
 proc refresh {} {
@@ -138,17 +292,9 @@ proc refresh {} {
     after 250 refresh
 }
 
-proc act {name {value ""}} {
-    set msg [dp_action $name $value]
-    if {$msg ne ""} { set ::last $msg }
-    focus .
-    update_ui
-}
-
 foreach k {r R} { bind . <KeyPress-$k> {act reset} }
 bind . <space> {act pause}
 foreach k {c C} { bind . <KeyPress-$k> {act palette} }
-foreach k {k K} { bind . <KeyPress-$k> {act kernel} }
 foreach k {g G} { bind . <KeyPress-$k> {act grid} }
 foreach k {p P} { bind . <KeyPress-$k> {act periodic} }
 foreach k {o O} { bind . <KeyPress-$k> {act circle} }
@@ -159,4 +305,4 @@ bind . <Escape> {dp_quit}
 wm protocol . WM_DELETE_WINDOW {dp_quit}
 wm deiconify .
 focus -force .
-after 100 refresh
+after 100 { rebuild_schema; refresh }

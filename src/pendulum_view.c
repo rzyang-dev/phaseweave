@@ -1,6 +1,8 @@
 /* pendulum_view.c - 选中像素对应的双摆 + 数值信息，单独一个 Win32 窗口 */
 #include "pendulum_view.h"
 
+#include "physics.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,7 +76,7 @@ static void paint(PendulumView *v)
     }
 
     {
-        int info_h = 104;
+        int info_h = 126;
         int area_h = h - info_h - 40;
         double l1 = v->params.l1 > 0.0 ? v->params.l1 : 1.0;
         double l2 = v->params.l2 > 0.0 ? v->params.l2 : 1.0;
@@ -121,17 +123,23 @@ static void paint(PendulumView *v)
         SetTextColor(mem, RGB(155, 165, 180));
         snprintf(line, sizeof(line), "cell (%d, %d)", v->cell_x, v->cell_y);
         TextOutA(mem, 14, h - info_h, line, (int)strlen(line));
+        snprintf(line, sizeof(line), "m1 %0.3f   m2 %0.3f", v->params.m1, v->params.m2);
+        TextOutA(mem, 14, h - info_h + 22, line, (int)strlen(line));
 
         SelectObject(mem, v->font_body);
         SetTextColor(mem, RGB(220, 225, 235));
         snprintf(line, sizeof(line), "theta1 %+0.3f   theta2 %+0.3f",
                  v->state[0], v->state[1]);
-        TextOutA(mem, 14, h - info_h + 22, line, (int)strlen(line));
+        TextOutA(mem, 14, h - info_h + 44, line, (int)strlen(line));
         snprintf(line, sizeof(line), "omega1 %+0.3f   omega2 %+0.3f",
                  v->state[2], v->state[3]);
-        TextOutA(mem, 14, h - info_h + 44, line, (int)strlen(line));
-        snprintf(line, sizeof(line), "damping %0.3f", v->params.damping);
         TextOutA(mem, 14, h - info_h + 66, line, (int)strlen(line));
+        {
+            double st[4] = { v->state[0], v->state[1], v->state[2], v->state[3] };
+            snprintf(line, sizeof(line), "damping %0.3f   energy %+0.2f",
+                     v->params.damping, dp_energy(st, &v->params));
+        }
+        TextOutA(mem, 14, h - info_h + 88, line, (int)strlen(line));
 
         }
 

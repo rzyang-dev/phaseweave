@@ -136,6 +136,18 @@ static int cmd_status(ClientData cd, Tcl_Interp *ip, int objc, Tcl_Obj *const ob
     return TCL_OK;
 }
 
+static int cmd_query(ClientData cd, Tcl_Interp *ip, int objc, Tcl_Obj *const objv[])
+{
+    Panel *p = (Panel *)cd;
+    char buf[8192];
+    const char *what = "";
+    buf[0] = 0;
+    if (objc > 1) what = Tcl_GetString(objv[1]);
+    if (p->cb.query) p->cb.query(p->cb.user, what, buf, sizeof(buf));
+    Tcl_SetObjResult(ip, Tcl_NewStringObj(buf, -1));
+    return TCL_OK;
+}
+
 static int cmd_quit(ClientData cd, Tcl_Interp *ip, int objc, Tcl_Obj *const objv[])
 {
     Panel *p = (Panel *)cd;
@@ -194,6 +206,7 @@ Panel *panel_create(const PanelCallbacks *cb, const char *script_path,
 
     Tcl_CreateObjCommand(p->ip, "dp_action", cmd_action, p, NULL);
     Tcl_CreateObjCommand(p->ip, "dp_status", cmd_status, p, NULL);
+    Tcl_CreateObjCommand(p->ip, "dp_query", cmd_query, p, NULL);
     Tcl_CreateObjCommand(p->ip, "dp_quit", cmd_quit, p, NULL);
 
     rc = Tcl_EvalFile(p->ip, script_path);

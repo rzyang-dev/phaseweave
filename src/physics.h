@@ -6,6 +6,7 @@
 
 void dp_normalize_angle(double *angle);
 void dp_rk4_step(double state[4], const DpParams *p);
+double dp_energy(const double state[4], const DpParams *p);
 float dp_field_value(float theta1, float theta2);
 void dp_phase_lut(unsigned char *lut);
 void dp_colorize(const float *field, int count, const unsigned char *lut, unsigned char *rgba);
