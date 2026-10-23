@@ -27,5 +27,7 @@ typedef struct {
 
 int  custom_model_build(CustomModel *cm, const CustomSpec *s, char *err, size_t errsz);
 void custom_model_rebind(CustomModel *cm);
+int  custom_model_glsl(const CustomModel *cm, char *out, size_t outsz,
+                       char *err, size_t errsz);
 
 #endif

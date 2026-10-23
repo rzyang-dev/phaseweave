@@ -4,6 +4,7 @@
 #include "expr.h"
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -175,4 +176,71 @@ void custom_model_rebind(CustomModel *cm)
     cm->model.state_names[1] = cm->state_names[1];
     for (i = 2; i < MODEL_MAX_STATE; ++i) cm->model.state_names[i] = NULL;
     cm->model.user = cm;
+}
+static int glsl_append(char *out, size_t outsz, size_t *pos, const char *fmt, ...)
+{
+    va_list ap;
+    int n;
+    if (!out || !pos || *pos >= outsz) return 0;
+    va_start(ap, fmt);
+    n = vsnprintf(out + *pos, outsz - *pos, fmt, ap);
+    va_end(ap);
+    if (n < 0 || (size_t)n >= outsz - *pos) return 0;
+    *pos += (size_t)n;
+    return 1;
+}
+
+int custom_model_glsl(const CustomModel *cm, char *out, size_t outsz,
+                      char *err, size_t errsz)
+{
+    char vbuf[2 + MODEL_MAX_PARAMS][64];
+    const char *vars[2 + MODEL_MAX_PARAMS];
+    char step_x[2048], step_y[2048];
+    char chan[MODEL_MAX_CHANNELS][2048];
+    size_t pos = 0;
+    int i;
+    if (err && errsz) err[0] = 0;
+    if (!cm || !out || outsz == 0) return 0;
+    if (cm->nparams < 0 || cm->nparams > MODEL_MAX_PARAMS) return 0;
+    snprintf(vbuf[0], sizeof(vbuf[0]), "sx");
+    snprintf(vbuf[1], sizeof(vbuf[1]), "sy");
+    for (i = 0; i < cm->nparams; ++i)
+        snprintf(vbuf[2 + i], sizeof(vbuf[2 + i]), "cells[i*16+%d]", 4 + i);
+    vars[0] = vbuf[0]; vars[1] = vbuf[1];
+    for (i = 0; i < cm->nparams; ++i) vars[2 + i] = vbuf[2 + i];
+    if (!expr_to_glsl(&cm->step_x, vars, 2 + cm->nparams, step_x, sizeof(step_x), err, errsz)) return 0;
+    if (!expr_to_glsl(&cm->step_y, vars, 2 + cm->nparams, step_y, sizeof(step_y), err, errsz)) return 0;
+    for (i = 0; i < cm->nchannels; ++i) {
+        if (!expr_to_glsl(&cm->chan[i], vars, 2 + cm->nparams, chan[i], sizeof(chan[i]), err, errsz))
+            return 0;
+    }
+    if (!glsl_append(out, outsz, &pos, "#version 430\n"))
+        return 0;
+    glsl_append(out, outsz, &pos,
+        "layout(local_size_x=1, local_size_y=1) in;\n"
+        "layout(std430, binding=0) buffer Cells { float cells[]; };\n"
+        "layout(std430, binding=1) buffer Chans { float chans[]; };\n"
+        "uniform int uRes;\nuniform int uSteps;\n"
+        "void main() {\n"
+        "  int i = int(gl_GlobalInvocationID.x) + int(gl_GlobalInvocationID.y) * uRes;\n"
+        "  float sx = cells[i*16+0];\n"
+        "  float sy = cells[i*16+1];\n"
+        "  for (int k=0; k<uSteps; ++k) {\n");
+    glsl_append(out, outsz, &pos, "    float nx = %s;\n", step_x);
+    glsl_append(out, outsz, &pos, "    float ny = %s;\n", step_y);
+    glsl_append(out, outsz, &pos,
+        "    sx = nx; sy = ny;\n"
+        "    if (isnan(sx) || isnan(sy) || isinf(sx) || isinf(sy)) { sx = 0.0; sy = 0.0; }\n"
+        "  }\n"
+        "  cells[i*16+0] = sx; cells[i*16+1] = sy;\n");
+    for (i = 0; i < cm->nchannels; ++i)
+        glsl_append(out, outsz, &pos, "  chans[i*4+%d] = %s;\n", i, chan[i]);
+    for (i = cm->nchannels; i < 4; ++i)
+        glsl_append(out, outsz, &pos, "  chans[i*4+%d] = 0.0;\n", i);
+    glsl_append(out, outsz, &pos, "}\n");
+    if (pos >= outsz) {
+        if (err) snprintf(err, errsz, "GLSL shader too long");
+        return 0;
+    }
+    return 1;
 }

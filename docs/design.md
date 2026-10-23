@@ -225,7 +225,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 23 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.7 MB，exe 约 782 KB。
+zip 约 3.7 MB，exe 约 790 KB。
 
 ## 13. 物理与数值边界
 
@@ -249,6 +249,7 @@ zip 约 3.7 MB，exe 约 782 KB。
 - M4a（已完成）：colorbar、Inspect、轴读数、PNG/CSV 导出；
 - M4b（已完成）：Lua schema 元数据 + F5 热重载；
 - M5a（已完成）：Lua 2D map 表达式 → CPU 字节码；
-- M5b：GLSL 代码生成 + 控制流/ODE 表达式，实验保存/加载；
+- M5b（已完成）：GLSL 代码生成 + GPU 单格验证；
+- M6：GPU compute atlas + CPU 回退、控制流/ODE、实验保存/加载；
 - M6：GPU compute atlas、FTLE/盆地、Poincaré、切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。

@@ -46,6 +46,11 @@ struct Gpu {
     GLint u_field, u_lut;
     GLint u_center, u_span, u_range_min, u_range, u_periodic;
 
+    GLuint custom_prog;
+    GLuint custom_cells;
+    GLuint custom_chans;
+    GLint  u_custom_res, u_custom_steps;
+
     char version[160];
     char renderer[160];
     char reason[200];
@@ -751,6 +756,61 @@ Gpu *gpu_create(HWND hwnd, HDC hdc, int force_legacy, char *err, size_t errsz)
     }
     g->res = 0;
     return g;
+}
+
+int gpu_compile_custom(Gpu *g, const char *src, char *err, size_t errsz)
+{
+    GLuint cs, prog;
+    if (err && errsz) err[0] = 0;
+    if (!g || !g->modern) { if (err) snprintf(err, errsz, "custom compute: OpenGL 4.3 context unavailable"); return 0; }
+    cs = compile_shader(g, DP_GL_COMPUTE_SHADER, src, "custom.comp", err, errsz);
+    if (!cs) return 0;
+    prog = link_program(g, cs, 0, "custom compute program", err, errsz);
+    if (!prog) return 0;
+    if (g->custom_prog) g->gl.DeleteProgram(g->custom_prog);
+    g->custom_prog = prog;
+    g->u_custom_res = g->gl.GetUniformLocation(prog, "uRes");
+    g->u_custom_steps = g->gl.GetUniformLocation(prog, "uSteps");
+    if (g->u_custom_res < 0 || g->u_custom_steps < 0) {
+        if (err) snprintf(err, errsz, "custom compute: uRes/uSteps optimized out");
+        return 0;
+    }
+    return 1;
+}
+
+int gpu_run_custom(Gpu *g, const float *cells, int res, int steps,
+                   float *out_cells, float *out_chans,
+                   char *err, size_t errsz)
+{
+    size_t n, cn;
+    if (err && errsz) err[0] = 0;
+    if (!g || !g->custom_prog || !cells || !out_cells || !out_chans || res <= 0) {
+        if (err) snprintf(err, errsz, "custom compute: invalid state");
+        return 0;
+    }
+    n = (size_t)res * (size_t)res;
+    cn = n * 16u;
+    if (n > (size_t)32768u) { if (err) snprintf(err, errsz, "custom compute: res too large"); return 0; }
+    if (g->custom_cells) g->gl.DeleteBuffers(1, &g->custom_cells);
+    if (g->custom_chans) g->gl.DeleteBuffers(1, &g->custom_chans);
+    g->gl.GenBuffers(1, &g->custom_cells);
+    g->gl.GenBuffers(1, &g->custom_chans);
+    g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_cells);
+    g->gl.BufferData(DP_GL_SHADER_STORAGE_BUFFER, (ptrdiff_t)(cn * sizeof(float)), cells, 0x88E4);
+    g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_chans);
+    g->gl.BufferData(DP_GL_SHADER_STORAGE_BUFFER, (ptrdiff_t)(n * 4u * sizeof(float)), NULL, 0x88E4);
+    g->gl.BindBufferBase(DP_GL_SHADER_STORAGE_BUFFER, 0, g->custom_cells);
+    g->gl.BindBufferBase(DP_GL_SHADER_STORAGE_BUFFER, 1, g->custom_chans);
+    g->gl.UseProgram(g->custom_prog);
+    g->gl.Uniform1i(g->u_custom_res, res);
+    g->gl.Uniform1i(g->u_custom_steps, steps);
+    g->gl.DispatchCompute((GLuint)res, (GLuint)res, 1);
+    g->gl.MemoryBarrier(DP_GL_SHADER_STORAGE_BARRIER_BIT | DP_GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | DP_GL_TEXTURE_FETCH_BARRIER_BIT);
+    g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_cells);
+    g->gl.GetBufferSubData(DP_GL_SHADER_STORAGE_BUFFER, 0, (ptrdiff_t)(cn * sizeof(float)), out_cells);
+    g->gl.BindBuffer(DP_GL_SHADER_STORAGE_BUFFER, g->custom_chans);
+    g->gl.GetBufferSubData(DP_GL_SHADER_STORAGE_BUFFER, 0, (ptrdiff_t)(n * 4u * sizeof(float)), out_chans);
+    return 1;
 }
 
 void gpu_destroy(Gpu *g)

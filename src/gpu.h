@@ -42,4 +42,11 @@ const char *gpu_version(Gpu *g);
 const char *gpu_renderer(Gpu *g);
 const char *gpu_fallback_reason(Gpu *g);
 
+/* Dynamic expression-model compute (M5b): compile generated GLSL and run one
+ * or more atlas cells.  CPU remains authoritative when this is unavailable. */
+int gpu_compile_custom(Gpu *g, const char *src, char *err, size_t errsz);
+int gpu_run_custom(Gpu *g, const float *cells, int res, int steps,
+                   float *out_cells, float *out_chans,
+                   char *err, size_t errsz);
+
 #endif

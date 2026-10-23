@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (23 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (782,336 bytes)
+OK -> dist/dp-phase/dp-phase.exe (790,528 bytes)
       staged 10.3 MB
-      dist/dp-phase-1.8.0.zip (3.6 MB)
+      dist/dp-phase-1.9.0.zip (3.6 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 782,336 B |
+| exe | 790,528 B |
 | zip | 约 3.7 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -46,10 +46,12 @@ OK -> dist/dp-phase/dp-phase.exe (782,336 bytes)
   [ok]   custom model builds
   [ok]   custom init matches built-in Hénon
   [ok]   custom step matches built-in Hénon
+  [ok]   GPU custom state matches CPU
+  [ok]   GPU custom channels match CPU
 selftest: 100 passed, 0 failed
 ```
 
-`/gpu-selftest`：**106/106**（76 CPU + 旧 GPU 回归）。
+`/gpu-selftest`：**112/112**（76 CPU + 旧 GPU 回归）。
 GUI 采样仍是 CPU；GPU 只负责 atlas RGBA 显示和线叠加。
 
 ## 3. 双摆三窗口
@@ -180,14 +182,33 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
 
 ![自定义模型](shot-custom.png)
 
-## 10. 性能
+## 10. GLSL 代码生成与 GPU 单格
+
+`expr_to_glsl()` 从 postfix 字节码生成 GLSL，`custom_model_glsl()` 生成 compute shader；
+`gpu_compile_custom()/gpu_run_custom()` 动态编译/dispatch。
+
+```text
+-- GPU expression codegen
+  [ok]   GPU custom model builds
+  [ok]   GLSL source generated
+  [ok]   generated GLSL compiles
+  [ok]   GPU custom dispatch
+  [ok]   GPU custom state matches CPU
+  [ok]   GPU custom channels match CPU
+selftest: 112 passed, 0 failed
+```
+
+测试用单格、10 步 Hénon 表达式；GPU float 与 CPU double 容差 1e-5。
+GUI atlas 仍走 CPU，GPU compute atlas 是下一步。
+
+## 11. 性能
 
 - 双摆 64×64：142–147 fps；
 - Logistic/Hénon 64×64：140+ fps；
 - 64×64 双摆每步约 2 ms（8 线程）；
 - 256×256 CPU 仍可算，但约 16 倍成本，GPU compute 未接 GUI。
 
-## 11. 本次修掉的问题
+## 12. 本次修掉的问题
 
 | 问题 | 根因 | 修复 |
 | --- | --- | --- |
@@ -202,7 +223,7 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
 | CSV 列名冲突 | x/y/state/channel 同名 | 加 `x_/y_/state_/ch_` 前缀 |
 | Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/experiment.lua |
 
-## 12. 已知边界
+## 13. 已知边界
 
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
@@ -213,7 +234,7 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
 7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
 8. 没有 3D 切片/连续化。
 
-## 13. 复现
+## 14. 复现
 
 ```powershell
 pwsh -File build.ps1

@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.8.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.9.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -82,7 +82,7 @@ x/y 可以是任意两个 eligible 参数：
 
 ![Hénon map](docs/shot-henon.png)
 
-### Lua 表达式模型（M5a）
+### Lua 表达式模型（M5a/M5b）
 
 `experiment.lua` 里的 `M.custom` 定义 2 状态 map：
 
@@ -94,7 +94,12 @@ x/y 可以是任意两个 eligible 参数：
 C 的 `expr.c` 在加载时把字符串编译成 **postfix bytecode**，每像素执行字节码；
 **不逐像素调用 Lua**。自检将 custom 与内置 Hénon 的前 10 步逐值比较。
 
-当前限制：只支持 2 状态 map、无控制流/ODE/GLSL 代码生成；CPU 64×64 仍约 140 fps。
+M5b 又加了 **GLSL 代码生成**：`expr_to_glsl()` 把 postfix 字节码转成 GLSL，
+`custom_model_glsl()` 生成 compute shader，`gpu_compile_custom/gpu_run_custom` 编译并执行。
+GPU 单格结果与 CPU 逐值匹配（双精度 CPU vs float GPU，容差 1e-5）。
+
+当前限制：只支持 2 状态 map、无控制流/ODE；GLSL 只做了单格验证，
+GUI atlas 仍走 CPU；CPU 64×64 仍约 140 fps。
 
 ![Lua 表达式模型](docs/shot-custom.png)
 
@@ -188,32 +193,32 @@ src/model.c         模型注册表
 src/model_dp.c      双摆 ODE
 src/model_logistic.c Logistic map + Lyapunov
 src/model_henon.c   Hénon map
-src/expr.c/h        表达式 → postfix bytecode / CPU VM
+src/expr.c/h        表达式 → postfix bytecode + GLSL 生成
 src/model_custom.c/h Lua 表达式 2D map
 src/experiment.c/h  模型无关的轴/范围/通道 schema + Lua metadata 应用
 src/schema.h        Lua↔Experiment 的 schema 元数据
 src/atlas.c/h       每像素 state+params、调用模型、通道、后处理、RGBA
 src/app.c           窗口/帧循环/模型切换/选择/预设
-src/gpu.c           OpenGL 4.3 上下文、atlas RGBA 显示、线叠加
+src/gpu.c           OpenGL 4.3 上下文、动态 compute 编译、atlas RGBA 显示、线叠加
 src/phase_view.c    归一化 [0,1] 视图、pick、平移/缩放、格线/圆圈
 src/panel.c         Tcl/Tk 宿主与 dp_action/dp_status/dp_query
 src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
 experiments/        experiment.lua：schema/表达式 + 调色板
-src/selftest.c      CPU 100 项；含 GPU 的 106 项
+src/selftest.c      CPU 100 项；含 GPU 的 112 项
 ```
 
 ## 验证
 
 - `/selftest`：**100/100**
-- `/gpu-selftest`：**106/106**
+- `/gpu-selftest`：**112/112**
 - 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
 ## 已知边界 / 下一步
 
-1. Lua 已能描述 2D map 表达式并编译到 CPU 字节码；还没有 GLSL 代码生成、控制流/ODE。
+1. Lua 2D map 已生成 CPU 字节码和 GLSL；GLSL 只做了单格验证，还没有控制流/ODE 与 GUI atlas 集成。
 2. GUI 采样是 CPU；GPU compute atlas 未接。
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 没有文件选择对话框、实验保存/加载；导出固定到 exe 旁 exports/。
@@ -224,4 +229,4 @@ src/selftest.c      CPU 100 项；含 GPU 的 106 项
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.8.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.9.0.zip`

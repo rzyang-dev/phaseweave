@@ -250,3 +250,118 @@ double expr_eval(const Expr *e, const double *vars)
     }
     return sp == 1 ? st[0] : 0.0;
 }
+/* ---- GLSL generation -------------------------------------------------
+ * Emit a parenthesized expression from postfix bytecode. Callers provide the
+ * GLSL spelling of each variable (e.g. "sx" or "cells[i*16+4]").
+ */
+static char *dup_str(const char *s)
+{
+    size_t n = strlen(s) + 1;
+    char *p = (char *)malloc(n);
+    if (p) memcpy(p, s, n);
+    return p;
+}
+
+static char *fmt_num(double v)
+{
+    char buf[64];
+    size_t n;
+    snprintf(buf, sizeof(buf), "%.17g", v);
+    n = strlen(buf);
+    if (n + 3 < sizeof(buf) && !strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E')) {
+        buf[n++] = '.'; buf[n++] = '0'; buf[n] = 0;
+    }
+    return dup_str(buf);
+}
+
+static char *join3(const char *a, const char *b, const char *op)
+{
+    size_t n = strlen(a) + strlen(b) + strlen(op) + 8;
+    char *p = (char *)malloc(n);
+    if (p) snprintf(p, n, "(%s %s %s)", a, op, b);
+    return p;
+}
+
+static char *join_call1(const char *fn, const char *a)
+{
+    size_t n = strlen(fn) + strlen(a) + 4;
+    char *p = (char *)malloc(n);
+    if (p) snprintf(p, n, "%s(%s)", fn, a);
+    return p;
+}
+
+static char *join_call2(const char *fn, const char *a, const char *b)
+{
+    size_t n = strlen(fn) + strlen(a) + strlen(b) + 6;
+    char *p = (char *)malloc(n);
+    if (p) snprintf(p, n, "%s(%s, %s)", fn, a, b);
+    return p;
+}
+
+int expr_to_glsl(const Expr *e, const char *const *var_glsl, int nvars,
+                 char *out, size_t outsz, char *err, size_t errsz)
+{
+    char *st[64];
+    int sp = 0, i, ok = 0;
+    if (err && errsz) err[0] = 0;
+    if (!e || !out || outsz == 0 || nvars < 0 || nvars > EXPR_MAX_VARS) return 0;
+    memset(st, 0, sizeof(st));
+    for (i = 0; i < e->n; ++i) {
+        const ExprInsn *in = &e->code[i];
+        char *a = NULL, *b = NULL, *r = NULL;
+        if (in->op == OP_CONST) {
+            r = fmt_num(in->val);
+        } else if (in->op == OP_VAR) {
+            if (in->arg < 0 || in->arg >= nvars || !var_glsl[in->arg]) {
+                if (err) snprintf(err, errsz, "GLSL variable index out of range");
+                break;
+            }
+            r = dup_str(var_glsl[in->arg]);
+        } else {
+            int unary = (in->op >= OP_NEG && in->op <= OP_CEIL);
+            if (sp < (unary ? 1 : 2)) { if (err) snprintf(err, errsz, "GLSL stack underflow"); break; }
+            if (!unary) b = st[--sp];
+            a = st[--sp];
+            switch (in->op) {
+            case OP_ADD: r = join3(a, b, "+"); break;
+            case OP_SUB: r = join3(a, b, "-"); break;
+            case OP_MUL: r = join3(a, b, "*"); break;
+            case OP_DIV: r = join3(a, b, "/"); break;
+            case OP_MOD: r = join_call2("mod", a, b); break;
+            case OP_POW: case OP_POWF: r = join_call2("pow", a, b); break;
+            case OP_MIN: r = join_call2("min", a, b); break;
+            case OP_MAX: r = join_call2("max", a, b); break;
+            case OP_ATAN2: r = join_call2("atan", a, b); break;
+            case OP_NEG: r = join_call1("-", a); break;
+            case OP_SIN: r = join_call1("sin", a); break;
+            case OP_COS: r = join_call1("cos", a); break;
+            case OP_TAN: r = join_call1("tan", a); break;
+            case OP_ASIN: r = join_call1("asin", a); break;
+            case OP_ACOS: r = join_call1("acos", a); break;
+            case OP_ATAN: r = join_call1("atan", a); break;
+            case OP_SQRT: r = join_call1("sqrt", a); break;
+            case OP_ABS: r = join_call1("abs", a); break;
+            case OP_EXP: r = join_call1("exp", a); break;
+            case OP_LOG: r = join_call1("log", a); break;
+            case OP_FLOOR: r = join_call1("floor", a); break;
+            case OP_CEIL: r = join_call1("ceil", a); break;
+            default: break;
+            }
+            free(a); free(b);
+            if (!r && err) snprintf(err, errsz, "GLSL generation failed");
+        }
+        if (err && err[0]) { if (r) { free(r); } break; }
+        if (!r) break;
+        if (sp >= 64) { free(r); if (err) snprintf(err, errsz, "GLSL stack overflow"); break; }
+        st[sp++] = r;
+    }
+    if (sp == 1 && st[0] && (!err || !err[0])) {
+        strncpy(out, st[0], outsz - 1);
+        out[outsz - 1] = 0;
+        ok = 1;
+    } else if (err && !err[0]) {
+        snprintf(err, errsz, "GLSL expression did not leave one value");
+    }
+    for (i = 0; i < sp; ++i) free(st[i]);
+    return ok;
+}

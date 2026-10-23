@@ -26,5 +26,7 @@ int    expr_compile(Expr *e, const char *src,
                     const char *const *vars, int nvars,
                     char *err, size_t errsz);
 double expr_eval(const Expr *e, const double *vars);
+int    expr_to_glsl(const Expr *e, const char *const *var_glsl, int nvars,
+                    char *out, size_t outsz, char *err, size_t errsz);
 
 #endif

@@ -701,6 +701,64 @@ static void test_bmp(void)
     DeleteFileA(path);
 }
 
+static void test_gpu_custom(Gpu *g)
+{
+    CustomSpec spec;
+    CustomModel cm;
+    char err[1024];
+    char glsl[32768];
+    float cells[16], out[16], ch[4];
+    double state[4], vals[MODEL_MAX_PARAMS];
+    int i;
+
+    printf("-- GPU expression codegen\n");
+    memset(&spec, 0, sizeof(spec));
+    strcpy(spec.schema.title, "GPU Hénon");
+    strcpy(spec.schema.axis_x, "a");
+    strcpy(spec.schema.axis_y, "b");
+    spec.schema.nparams = 4;
+    spec.schema.params[0].def = 1.4; spec.schema.params[0].min = 0; spec.schema.params[0].max = 1.5;
+    strcpy(spec.schema.params[0].name, "a"); strcpy(spec.schema.params[0].label, "a");
+    spec.schema.params[1].def = 0.3; spec.schema.params[1].min = -1; spec.schema.params[1].max = 1;
+    strcpy(spec.schema.params[1].name, "b"); strcpy(spec.schema.params[1].label, "b");
+    spec.schema.params[2].def = 0; spec.schema.params[2].min = -2; spec.schema.params[2].max = 2;
+    strcpy(spec.schema.params[2].name, "x0"); strcpy(spec.schema.params[2].label, "x0");
+    spec.schema.params[3].def = 0; spec.schema.params[3].min = -2; spec.schema.params[3].max = 2;
+    strcpy(spec.schema.params[3].name, "y0"); strcpy(spec.schema.params[3].label, "y0");
+    spec.schema.nchannels = 4;
+    strcpy(spec.schema.channels[0].name, "x"); strcpy(spec.schema.channels[0].label, "x");
+    spec.schema.channels[0].min = -2; spec.schema.channels[0].max = 2;
+    strcpy(spec.schema.channels[1].name, "y"); strcpy(spec.schema.channels[1].label, "y");
+    spec.schema.channels[1].min = -2; spec.schema.channels[1].max = 2;
+    strcpy(spec.schema.channels[2].name, "radius"); strcpy(spec.schema.channels[2].label, "radius");
+    spec.schema.channels[2].min = 0; spec.schema.channels[2].max = 3;
+    strcpy(spec.schema.channels[3].name, "x_abs"); strcpy(spec.schema.channels[3].label, "|x|");
+    spec.schema.channels[3].min = 0; spec.schema.channels[3].max = 2;
+    strcpy(spec.state_names[0], "x"); strcpy(spec.state_names[1], "y");
+    strcpy(spec.init_x, "x0"); strcpy(spec.init_y, "y0");
+    strcpy(spec.step_x, "1 - a*x*x + y"); strcpy(spec.step_y, "b*x");
+    strcpy(spec.chan_expr[0], "x"); strcpy(spec.chan_expr[1], "y");
+    strcpy(spec.chan_expr[2], "sqrt(x*x + y*y)"); strcpy(spec.chan_expr[3], "abs(x)");
+    check(custom_model_build(&cm, &spec, err, sizeof(err)) == 1, "GPU custom model builds");
+    check(custom_model_glsl(&cm, glsl, sizeof(glsl), err, sizeof(err)) == 1, "GLSL source generated");
+    check(gpu_compile_custom(g, glsl, err, sizeof(err)) == 1, "generated GLSL compiles");
+    memset(cells, 0, sizeof(cells));
+    cells[4] = 1.4f; cells[5] = 0.3f; cells[6] = 0.0f; cells[7] = 0.0f;
+    check(gpu_run_custom(g, cells, 1, 10, out, ch, err, sizeof(err)) == 1, "GPU custom dispatch");
+    memset(vals, 0, sizeof(vals));
+    vals[0] = 1.4; vals[1] = 0.3;
+    cm.model.init(&cm.model, vals, state);
+    for (i = 0; i < 10; ++i) cm.model.step(&cm.model, state, vals, 0.0, 1);
+    {
+        float cc[4];
+        cm.model.observe(&cm.model, state, vals, cc);
+        check(fabs(out[0] - state[0]) < 1e-5 && fabs(out[1] - state[1]) < 1e-5,
+              "GPU custom state matches CPU");
+        check(fabs(ch[0] - cc[0]) < 1e-4 && fabs(ch[2] - cc[2]) < 1e-4,
+              "GPU custom channels match CPU");
+    }
+}
+
 static void test_gpu(void)
 {
     Platform *plat;
@@ -731,6 +789,7 @@ static void test_gpu(void)
         return;
     }
     check(1, "OpenGL 4.3 core + compute shader compiled");
+    test_gpu_custom(g);
 
     gpu_set_res(g, 64);
     check(gpu_field_filter(g) == GL_NEAREST, "field texture uses GL_NEAREST (sharp pixels)");
