@@ -1,0 +1,87 @@
+#version 430 core
+/* field.comp - double-pendulum phase-space RK4, one invocation per cell.
+ *
+ * On-chip strategy:
+ *   - the grid state lives in an SSBO on the GPU; the CPU never reads it per frame
+ *   - each 16x16 workgroup stages its tile in 4 KB of shared memory and runs the
+ *     whole frame's substeps there, so the SSBO sees one load and one store per
+ *     frame instead of one per substep
+ *   - the result is written straight to an R32F image that the display shader
+ *     samples; there is no framebuffer readback in the normal loop
+ */
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) buffer StateBuf { vec4 cells[]; };
+layout(r32f, binding = 0) uniform image2D fieldImg;
+
+uniform int   uRes;
+uniform int   uSteps;
+uniform float uM1;
+uniform float uM2;
+uniform float uL1;
+uniform float uL2;
+uniform float uG;
+uniform float uDamp;
+uniform float uDt;
+
+shared vec4 tile[16][16];
+
+const float PI_F = 3.141592653589793238462643383279;
+const float TWO_PI_F = 6.283185307179586476925286766559;
+const float FIELD_K = 0.079577471545947667884441881687; /* 1 / (4*pi) */
+
+float norm_angle(float a)
+{
+    return mod(a + PI_F, TWO_PI_F) - PI_F;
+}
+
+vec4 deriv(vec4 s)
+{
+    float d = s.x - s.y;
+    float sd = sin(d);
+    float cd = cos(d);
+    float den = uM1 + uM2 * sd * sd;
+    float w1s = s.z * s.z;
+    float w2s = s.w * s.w;
+
+    float o1 = (uM2 * uG * sin(s.y) * cd
+              - uM2 * sd * (uL1 * w1s * cd + uL2 * w2s)
+              - (uM1 + uM2) * uG * sin(s.x)) / (uL1 * den) - uDamp * s.z;
+
+    float o2 = ((uM1 + uM2) * (uL1 * w1s * sd - uG * sin(s.y) + uG * sin(s.x) * cd)
+              + uM2 * uL2 * w2s * sd * cd) / (uL2 * den) - uDamp * s.w;
+
+    return vec4(s.z, s.w, o1, o2);
+}
+
+void main()
+{
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 lid = ivec2(gl_LocalInvocationID.xy);
+    bool inside = (gid.x < uRes && gid.y < uRes);
+
+    tile[lid.y][lid.x] = inside ? cells[gid.y * uRes + gid.x] : vec4(0.0);
+    barrier();
+
+    vec4 s = tile[lid.y][lid.x];
+    if (inside) {
+        for (int i = 0; i < uSteps; ++i) {
+            vec4 k1 = deriv(s);
+            vec4 k2 = deriv(s + 0.5 * uDt * k1);
+            vec4 k3 = deriv(s + 0.5 * uDt * k2);
+            vec4 k4 = deriv(s + uDt * k3);
+            s += (uDt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+            s.x = norm_angle(s.x);
+            s.y = norm_angle(s.y);
+            if (any(isnan(s)) || any(isinf(s))) s = vec4(0.0);
+        }
+    }
+    tile[lid.y][lid.x] = s;
+    barrier();
+
+    if (inside) {
+        cells[gid.y * uRes + gid.x] = tile[lid.y][lid.x];
+        float u = fract((s.x + s.y) * FIELD_K + 0.5);
+        imageStore(fieldImg, gid, vec4(u, 0.0, 0.0, 1.0));
+    }
+}

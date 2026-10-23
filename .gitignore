@@ -1,0 +1,11 @@
+# build outputs
+build/
+dist/
+*.o
+*.obj
+*.mod
+*.exe
+
+# editor / os noise
+Thumbs.db
+desktop.ini
