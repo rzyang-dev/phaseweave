@@ -23,7 +23,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.15.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.16.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -175,8 +175,8 @@ param.r=3.7
 
 ## 地图刻度
 
-地图窗口在底边/左边绘制 min/mid/max 数字刻度与短 tick；数值按当前缩放/平移换算，
-轴名和范围仍在面板 `X theta1 [...]  Y theta2 [...]` 读数里。
+地图窗口在底边/左边绘制 min/mid/max 数字刻度与短 tick；顶部左右直接画
+`X theta1` / `Y theta2` 轴名。数值按当前缩放/平移换算，范围仍在面板读数里。
 
 ![地图刻度](docs/shot-axis.png)
 
@@ -192,7 +192,7 @@ param.r=3.7
 
 ![模型面板](docs/shot-panel.png)
 
-**View**：Model、Color by、View（raw/gradient/range/variance）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV。地图边缘有数字刻度（min/mid/max），轴名/范围在面板读数里。
+**View**：Model、Color by、View（raw/gradient/range/variance）、Palette、Kernel CPU/GPU、颜色条、Grid/Periodic/Circle、Reset view、Angle/Mass 预设、Export PNG/CSV。地图边缘有数字刻度（min/mid/max），顶部直接画 X/Y 轴名；范围在面板读数里。
 
 **Parameters**：X/Y 轴、范围、Res、dt、Steps/frame、模型参数、Apply parameters。
 面板高度按屏幕自适应（1080p 下 620 客户区），双摆 10 个参数能完整显示。
@@ -300,10 +300,10 @@ src/selftest.c      CPU 117 项；含 GPU 的 149 项
 3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 实验保存/加载已有；PNG/CSV 导出仍固定到 exe 旁 exports/。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
-6. 控制流/ODE、全模型 GPU、地图数字刻度已完成；还缺轴名直接画在地图上、更多会话状态；目标是 2D 地图，不是 AUTO/MatCont。
+6. 控制流/ODE、全模型 GPU、地图数字刻度与轴名直绘已完成；还缺更多会话状态；目标是 2D 地图，不是 AUTO/MatCont。
 
 ## 仓库
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.15.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.16.0.zip`

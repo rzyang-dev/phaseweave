@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (25 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (425,984 bytes)
+OK -> dist/dp-phase/dp-phase.exe (427,520 bytes)
       staged 10.1 MB
-      dist/dp-phase-1.15.0.zip (3.9 MB)
+      dist/dp-phase-1.16.0.zip (3.9 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 425,984 B |
+| exe | 427,520 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -231,9 +231,9 @@ SHA256 a/b 均为 DEB38453439C784A5DBBD45C0B7B68BC1175AE0D79DB8883074167576EFE6A
 
 ![Script 页](shot-panel-script.png)
 
-## 12. 地图数字刻度
+## 12. 地图刻度与轴名
 
-地图底边/左边绘制 min/mid/max 数字 tick；数值按 zoom/pan 换算，轴名在面板读数。
+地图底边/左边绘制 min/mid/max 数字 tick；顶部画 X/Y 轴名；数值按 zoom/pan 换算。
 
 ![地图刻度](shot-axis.png)
 

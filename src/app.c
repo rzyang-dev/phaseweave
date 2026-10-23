@@ -1041,6 +1041,8 @@ static void app_render_phase(App *a)
     axis_n = pv_build_axis_ticks(&a->view, 1.0, w, h,
                                  a->exp.xmin, a->exp.xmax,
                                  a->exp.ymin, a->exp.ymax,
+                                 (a->exp.axis_x >= 0) ? a->exp.p[a->exp.axis_x].name : "",
+                                 (a->exp.axis_y >= 0) ? a->exp.p[a->exp.axis_y].name : "",
                                  verts + total * 6, 32768 - total);
     total += axis_n;
     if (grid_n > 0) gpu_draw_lines(a->gpu, verts, grid_n, 1.0f);

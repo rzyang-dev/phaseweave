@@ -10,7 +10,7 @@
 - 解压即用的文件夹 + zip，Tcl/Tk 动态链接。
 
 当前是 M3：三个模型、通用 Model 接口、模型下拉、动态 schema、82 项自检。
-Lua 表达式模型、CPU/GLSL、全模型 GPU、Inspect、实验保存和地图数字刻度已完成；轴名直绘/更多会话状态仍在后面。
+Lua 表达式模型、CPU/GLSL、全模型 GPU、Inspect、实验保存、地图数字刻度和轴名直绘已完成；更多会话状态仍在后面。
 
 ## 2. 数据流
 
@@ -208,8 +208,8 @@ Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
 ## 10c. 地图数字刻度
 
 `phase_view.c` 用 5×7 矢量数字在底边/左边画 min/mid/max tick；标签位置按
-当前 zoom/pan 通过 `pv_screen_to_world` 换算，轴名/范围仍在面板读数。
-只画数字，不画轴名；没有纹理字体/GDI 文字。
+当前 zoom/pan 通过 `pv_screen_to_world` 换算；轴名画在顶部，范围仍在面板读数。
+数字刻度 + 顶部 `X name` / `Y name` 轴名；5×7 矢量字体，不依赖纹理/GDI。
 
 ## 11. Lua schema + palette
 
@@ -243,7 +243,7 @@ function M.schema(id) return M.models[id] end
 
 `build.ps1` 六步；C 25 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.9 MB，exe 约 426 KB。
+zip 约 3.9 MB，exe 约 428 KB。
 
 ## 13. 物理与数值边界
 
@@ -255,7 +255,7 @@ zip 约 3.9 MB，exe 约 426 KB。
 
 已知限制：
 
-- 内置模型 + Lua 表达式 map/ODE；全模型 GPU + 地图数字刻度已完成；还没有轴名直绘；
+- 内置模型 + Lua 表达式 map/ODE；全模型 GPU + 数字刻度 + 轴名直绘已完成；
 - GUI 默认 CPU；Kernel=GPU 可启用全模型 GPU atlas；
 - map 只有面板 Inspect，没有独立窗口 inspector；
 - 无文件选择对话框、实验保存/加载；PNG 只包含 atlas；
@@ -271,6 +271,7 @@ zip 约 3.9 MB，exe 约 426 KB。
 - M6（已完成）：GPU compute atlas + CPU 回退（自定义模型）；
 - M7a（已完成）：.dps 实验保存/加载 + 文件对话框 + CLI；
 - M7b（进行中）：控制流与 ODE 表达式已进 CPU+GLSL；
-- M8（进行中）：全模型 GPU + 地图数字刻度已完成；后续轴名直绘、更多会话状态。
+- M8（已完成）：全模型 GPU + 地图数字刻度 + 轴名直绘；
+- M9（进行中）：更多会话状态、最近实验。
 - M8：地图轴刻度、更多会话状态、FTLE/盆地/切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。
