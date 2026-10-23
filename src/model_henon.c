@@ -68,5 +68,6 @@ const Model HENON_MODEL = {
     { "x", "y", NULL, NULL },
     henon_init,
     henon_step,
-    henon_channels_fn
+    henon_channels_fn,
+    NULL
 };

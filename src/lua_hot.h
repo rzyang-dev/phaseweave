@@ -42,5 +42,6 @@ void    lua_hot_reset(LuaHot *h);
 
 int     lua_hot_schema(LuaHot *h, const char *model_id, Schema *out,
                        char *err, size_t errsz);
+int     lua_hot_custom(LuaHot *h, CustomSpec *out, char *err, size_t errsz);
 
 #endif

@@ -5,8 +5,10 @@
 #include "atlas.h"
 #include "bmp.h"
 #include "experiment.h"
+#include "expr.h"
 #include "gpu.h"
 #include "lua_hot.h"
+#include "model_custom.h"
 #include "phase_view.h"
 #include "physics.h"
 #include "platform.h"
@@ -371,6 +373,60 @@ static void test_schema(void)
         check(strcmp(ci.label, "E") == 0 && fabs(ci.min + 10.0) < 1e-9,
               "channel metadata from schema");
     }
+}
+
+static void test_expressions_and_custom(void)
+{
+    Expr ex;
+    const char *vars[2] = { "x", "y" };
+    double v[2] = { 2.0, 0.0 };
+    char err[512];
+    double state[4], state2[4];
+    float ch[4], ch2[4];
+    double vals[MODEL_MAX_PARAMS];
+    LuaHot *h;
+    CustomSpec spec;
+    CustomModel cm;
+    char dir[MAX_PATH], path[MAX_PATH];
+    char *src = NULL;
+    size_t len = 0;
+
+    printf("-- expressions / custom model\n");
+    check(expr_compile(&ex, "1 + 2*x + sin(y)^2", vars, 2, err, sizeof(err)), "expression compiles");
+    check(fabs(expr_eval(&ex, v) - 5.0) < 1e-12, "expression precedence/functions");
+    check(expr_compile(&ex, "sqrt(9) + abs(-2)", vars, 2, err, sizeof(err)), "expression functions compile");
+    check(fabs(expr_eval(&ex, v) - 5.0) < 1e-12, "sqrt/abs evaluate");
+
+    platform_exe_dir(dir, sizeof(dir));
+    snprintf(path, sizeof(path), "%s\\experiments\\experiment.lua", dir);
+    if (!platform_read_file(path, &src, &len)) {
+        check(0, "custom experiment.lua is readable");
+        return;
+    }
+    h = lua_hot_create(src, len, path, "cpu", 16, err, sizeof(err));
+    check(h != NULL, "custom Lua state creation");
+    if (!h) { platform_free(src); return; }
+    check(lua_hot_custom(h, &spec, err, sizeof(err)) == 1, "lua_hot_custom parses");
+    check(custom_model_build(&cm, &spec, err, sizeof(err)) == 1, "custom model builds");
+    check(strcmp(cm.model.id, "custom") == 0 && cm.nchannels == 4,
+          "custom model metadata");
+
+    memset(vals, 0, sizeof(vals));
+    vals[0] = 1.4; vals[1] = 0.3; vals[2] = 0.0; vals[3] = 0.0;
+    cm.model.init(&cm.model, vals, state);
+    HENON_MODEL.init(&HENON_MODEL, vals, state2);
+    check(fabs(state[0] - state2[0]) < 1e-12 && fabs(state[1] - state2[1]) < 1e-12,
+          "custom init matches built-in Hénon");
+    cm.model.step(&cm.model, state, vals, 0.0, 10);
+    HENON_MODEL.step(&HENON_MODEL, state2, vals, 0.0, 10);
+    check(fabs(state[0] - state2[0]) < 1e-9 && fabs(state[1] - state2[1]) < 1e-9,
+          "custom step matches built-in Hénon");
+    cm.model.observe(&cm.model, state, vals, ch);
+    HENON_MODEL.observe(&HENON_MODEL, state2, vals, ch2);
+    check(fabs(ch[2] - ch2[2]) < 1e-5, "custom channel expression matches");
+
+    lua_hot_destroy(h);
+    platform_free(src);
 }
 
 static void test_fortran(void)
@@ -795,6 +851,7 @@ int dp_selftest(int with_gpu)
     test_experiment_atlas();
     test_maps();
     test_schema();
+    test_expressions_and_custom();
     test_fortran();
     test_timing();
     test_lua();

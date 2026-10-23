@@ -42,6 +42,7 @@ typedef struct Model {
                  const double *vals, double dt, int steps);
     void (*observe)(const struct Model *m, const double *state,
                     const double *vals, float ch[MODEL_MAX_CHANNELS]);
+    void *user;   /* model-private data (custom/expression model) */
 } Model;
 
 extern const Model DP_MODEL;

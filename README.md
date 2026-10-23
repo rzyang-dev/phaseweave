@@ -1,19 +1,20 @@
-# 动力学系统地图实验箱 · 双摆 / Logistic / Hénon
+# 动力学系统地图实验箱 · 双摆 / Logistic / Hénon / Lua 表达式模型
 
 一个 **二维参数/初值地图（2D map）** 实验框架：
 
 > 选模型 → 选两个参数/初值作为 x/y → 每个像素积分 → 多通道观测量 →
 > 后处理 + 调色板 → 右键选像素看轨道/状态。
 
-三个模型共享同一套 Experiment/Atlas/View/Panel：
+三种内置模型和 Lua 自定义表达式模型共享同一套 Experiment/Atlas/View/Panel：
 
 | 模型 | 类型 | 默认 x/y 轴 | 参数 | 通道 |
 | --- | --- | --- | --- | --- |
 | Double pendulum | ODE | θ1 / θ2 | θ1, θ2, ω1, ω2, m1, m2, l1, l2, g, damping | θ1, θ2, energy, omega_max |
 | Logistic map | map | r / x0 | r, x0 | x, lyapunov, mean, |x| |
 | Hénon map | map | a / b | a, b, x0, y0 | x, y, radius, |x| |
+| Lua Hénon (custom) | Lua map | a / b | a, b, x0, y0 | x, y, radius, |x| |
 
-双摆窗口只对双摆模型存在；Logistic/Hénon 是“地图 + 参数面板”两窗口。
+双摆窗口只对双摆模型存在；Logistic/Hénon/Lua 自定义模型是“地图 + 参数面板”两窗口。
 
 ![三窗口](docs/shot-windows.png)
 
@@ -22,12 +23,13 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.7.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.8.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
 .\dist\run\dp-phase\dp-phase.exe /model logistic
 .\dist\run\dp-phase\dp-phase.exe /model henon
+.\dist\run\dp-phase\dp-phase.exe /model custom
 ```
 
 发布物是解压即用的文件夹 + zip；Tcl/Tk 动态链接，不做单 exe/内嵌运行时：
@@ -43,7 +45,7 @@ dp-phase/
 
 已验证“PATH 只剩系统目录、MINGW_ROOT 指向不存在目录”的干净副本可以启动面板。
 
-## 三个模型
+## 内置模型 + Lua 自定义
 
 ### Double pendulum（示例 ODE）
 
@@ -80,14 +82,33 @@ x/y 可以是任意两个 eligible 参数：
 
 ![Hénon map](docs/shot-henon.png)
 
+### Lua 表达式模型（M5a）
+
+`experiment.lua` 里的 `M.custom` 定义 2 状态 map：
+
+- `state = { "x", "y" }`；
+- `step = { x = "1 - a*x*x + y", y = "b*x" }`；
+- 参数 a,b,x0,y0，默认轴 a/b；
+- channels 用表达式：`x`、`y`、`sqrt(x*x + y*y)`、`abs(x)`。
+
+C 的 `expr.c` 在加载时把字符串编译成 **postfix bytecode**，每像素执行字节码；
+**不逐像素调用 Lua**。自检将 custom 与内置 Hénon 的前 10 步逐值比较。
+
+当前限制：只支持 2 状态 map、无控制流/ODE/GLSL 代码生成；CPU 64×64 仍约 140 fps。
+
+![Lua 表达式模型](docs/shot-custom.png)
+
+![Lua 表达式面板](docs/shot-custom-panel.png)
+
 ## 模型选择与面板
 
 面板标题下是 **Model** 下拉框：
 
 - 切换模型会重建参数 schema、轴、范围和通道；
-- 双摆会重新创建右侧检查器，Logistic/Hénon 不创建；
+- 双摆会重新创建右侧检查器，Logistic/Hénon/Lua 自定义不创建；
 - 参数在 **Parameters** 页改，Apply 后重建，不需要 reload Lua；
 - **Angle map / Mass map** 预设是双摆专用；在 map 模型上点它会切回双摆。
+- Lua 自定义模型只有 `experiment.lua` 里存在 `M.custom` 时才出现。
 
 ![模型面板](docs/shot-panel.png)
 
@@ -167,6 +188,8 @@ src/model.c         模型注册表
 src/model_dp.c      双摆 ODE
 src/model_logistic.c Logistic map + Lyapunov
 src/model_henon.c   Hénon map
+src/expr.c/h        表达式 → postfix bytecode / CPU VM
+src/model_custom.c/h Lua 表达式 2D map
 src/experiment.c/h  模型无关的轴/范围/通道 schema + Lua metadata 应用
 src/schema.h        Lua↔Experiment 的 schema 元数据
 src/atlas.c/h       每像素 state+params、调用模型、通道、后处理、RGBA
@@ -177,22 +200,22 @@ src/panel.c         Tcl/Tk 宿主与 dp_action/dp_status/dp_query
 src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
 src/lua_hot.c       Lua 宿主 + palette/schema 桥
-experiments/        experiment.lua：schema 元数据 + 调色板
-src/selftest.c      CPU 89 项；含 GPU 的 95 项
+experiments/        experiment.lua：schema/表达式 + 调色板
+src/selftest.c      CPU 100 项；含 GPU 的 106 项
 ```
 
 ## 验证
 
-- `/selftest`：**89/89**
-- `/gpu-selftest`：**95/95**
-- 三个模型 GUI 启动、面板切换、双摆检查器创建/销毁、Logistic/Hénon 地图都实测；
+- `/selftest`：**100/100**
+- `/gpu-selftest`：**106/106**
+- 三个内置模型 + Lua 表达式模型 GUI 启动、面板切换、双摆检查器创建/销毁、自定义地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
 ## 已知边界 / 下一步
 
-1. Lua 是 schema/metadata + palette，还不是表达式模型 DSL。
+1. Lua 已能描述 2D map 表达式并编译到 CPU 字节码；还没有 GLSL 代码生成、控制流/ODE。
 2. GUI 采样是 CPU；GPU compute atlas 未接。
-3. 地图模型没有独立窗口检查器；用面板 **Inspect** 页。
+3. 地图/自定义模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 没有文件选择对话框、实验保存/加载；导出固定到 exe 旁 exports/。
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 不包含叠加线。
 6. 没有 3D 切片/分岔连续化；目标是 2D 地图，不是 AUTO/MatCont 替代品。
@@ -201,4 +224,4 @@ src/selftest.c      CPU 89 项；含 GPU 的 95 项
 
 - 分支：`three-windows`
 - 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.4.0.zip`
+- 发布：`dist/dp-phase/`、`dist/dp-phase-1.8.0.zip`

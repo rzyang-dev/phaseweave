@@ -77,6 +77,27 @@ M.models = {
     },
 }
 
+M.custom = {
+    title = "Lua Hénon map",
+    state = { "x", "y" },
+    axes = { "a", "b" },
+    params = {
+        { name="a",  label="a",  unit="", default=1.4, min=0.0, max=1.5, step=0.001, axis=true },
+        { name="b",  label="b",  unit="", default=0.3, min=-1.0, max=1.0, step=0.001, axis=true },
+        { name="x0", label="x0", unit="", default=0.0, min=-2.0, max=2.0, step=0.001, axis=true },
+        { name="y0", label="y0", unit="", default=0.0, min=-2.0, max=2.0, step=0.001, axis=true },
+    },
+    init = { x = "x0", y = "y0" },
+    step = { x = "1 - a*x*x + y", y = "b*x" },
+    channels = {
+        { name="x",      label="x",      unit="", min=-2.0, max=2.0, cyclic=false, expr="x" },
+        { name="y",      label="y",      unit="", min=-2.0, max=2.0, cyclic=false, expr="y" },
+        { name="radius", label="radius", unit="", min=0.0, max=3.0, cyclic=false, expr="sqrt(x*x + y*y)" },
+        { name="x_abs",  label="|x|",    unit="", min=0.0, max=2.0, cyclic=false, expr="abs(x)" },
+    },
+}
+M.models.custom = M.custom
+
 function M.schema(model_id)
     return M.models[model_id]
 end

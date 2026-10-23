@@ -80,5 +80,6 @@ const Model DP_MODEL = {
     { "theta1", "theta2", "omega1", "omega2" },
     dp_init,
     dp_step,
-    dp_channels_fn
+    dp_channels_fn,
+    NULL
 };

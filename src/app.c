@@ -6,6 +6,7 @@
 #include "experiment.h"
 #include "gpu.h"
 #include "lua_hot.h"
+#include "model_custom.h"
 #include "phase_view.h"
 #include "pendulum_view.h"
 #include "panel.h"
@@ -32,6 +33,8 @@ struct App {
     int      right_x, right_w, pend_h;
 
     Experiment exp;
+    CustomModel custom;
+    int      has_custom;
     int      use_lua;
     int      legacy;
 
@@ -72,6 +75,8 @@ static int app_apply_schema(App *a, int defaults)
 }
 
 static void app_reload(App *a);
+static int  app_load_custom(App *a);
+static const Model *app_resolve_model(App *a, const char *id);
 static void app_event(App *a, const DpEvent *ev);
 static void app_pend_close(void *user);
 static void app_pend_key(void *user, int vk, int down);
@@ -95,7 +100,7 @@ static void app_set_model(App *a, const char *id)
     int res;
     char err[512];
     if (!a || !id) return;
-    m = model_by_id(id);
+    m = app_resolve_model(a, id);
     if (!m || a->exp.mdl == m) return;
     res = a->exp.res;
     if (a->pview) { pendulum_view_destroy(a->pview); a->pview = NULL; }
@@ -249,6 +254,33 @@ static int app_read_disk_lua(App *a, char **data, size_t *len)
     return 0;
 }
 
+static int app_load_custom(App *a)
+{
+    CustomSpec spec;
+    CustomModel tmp;
+    char err[512];
+    if (!a || !a->lua) { if (a) a->has_custom = 0; return 0; }
+    if (!lua_hot_custom(a->lua, &spec, err, sizeof(err))) {
+        a->has_custom = 0;
+        return 0;
+    }
+    if (!custom_model_build(&tmp, &spec, err, sizeof(err))) {
+        a->has_custom = 0;
+        return 0;
+    }
+    a->custom = tmp;
+    custom_model_rebind(&a->custom);
+    a->has_custom = 1;
+    return 1;
+}
+
+static const Model *app_resolve_model(App *a, const char *id)
+{
+    if (id && strcmp(id, "custom") == 0 && a && a->has_custom)
+        return &a->custom.model;
+    return model_by_id(id);
+}
+
 static void app_reload(App *a)
 {
     char *disk = NULL;
@@ -273,6 +305,20 @@ static void app_reload(App *a)
         app_error_box(a, msg);
         platform_free(disk);
         return;
+    }
+    {
+        int was_custom = strcmp(a->exp.model, "custom") == 0;
+        app_load_custom(a);
+        if (was_custom) {
+            if (a->has_custom) {
+                int res = a->exp.res;
+                exp_init(&a->exp, &a->custom.model);
+                a->exp.res = res;
+                a->selected = -1;
+            } else {
+                app_set_model(a, "double_pendulum");
+            }
+        }
     }
     app_apply_schema(a, 0);
     app_load_palette(a);
@@ -666,6 +712,8 @@ static void panel_query_cb(void *user, const char *what, char *out, size_t outsz
             const Model *m = model_at(i);
             append_list(out, outsz, "{%s {%s}} ", m->id, m->title);
         }
+        if (a->has_custom)
+            append_list(out, outsz, "{%s {%s}} ", a->custom.model.id, a->custom.model.title);
     } else if (strcmp(what, "model") == 0) {
         append_list(out, outsz, "%s %s", a->exp.mdl->id, a->exp.mdl->title);
     } else if (strcmp(what, "palette") == 0) {
@@ -768,7 +816,8 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
             platform_free(disk);
         }
     }
-    exp_init(&a->exp, opt->model ? model_by_id(opt->model) : &DP_MODEL);
+    app_load_custom(a);
+    exp_init(&a->exp, app_resolve_model(a, opt->model ? opt->model : "double_pendulum"));
     app_apply_schema(a, 1);
     if (a->lua) lua_hot_set_res(a->lua, a->exp.res);
     if (opt->force_res > 0) a->exp.res = dp_clampi(opt->force_res, 16, 512);

@@ -639,3 +639,67 @@ int lua_hot_schema(LuaHot *h, const char *model_id, Schema *out,
     lua_pop(L, 1);
     return 1;
 }
+int lua_hot_custom(LuaHot *h, CustomSpec *out, char *err, size_t errsz)
+{
+    lua_State *L;
+    int i;
+    if (err && errsz) err[0] = 0;
+    if (!h || !out) return 0;
+    memset(out, 0, sizeof(*out));
+    if (!lua_hot_schema(h, "custom", &out->schema, err, errsz)) return 0;
+    L = h->L;
+    lua_getglobal(L, "hot");
+    if (!lua_istable(L, -1)) { lua_pop(L, 1); set_err(err, errsz, "hot table missing"); return 0; }
+    lua_getfield(L, -1, "custom");
+    lua_remove(L, -2);
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        set_err(err, errsz, "hot.custom is missing");
+        return 0;
+    }
+    lua_getfield(L, -1, "state");
+    if (lua_istable(L, -1)) {
+        lua_rawgeti(L, -1, 1);
+        if (lua_isstring(L, -1)) strncpy(out->state_names[0], lua_tostring(L, -1), 23);
+        lua_pop(L, 1);
+        lua_rawgeti(L, -1, 2);
+        if (lua_isstring(L, -1)) strncpy(out->state_names[1], lua_tostring(L, -1), 23);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    if (!out->state_names[0][0]) strcpy(out->state_names[0], "x");
+    if (!out->state_names[1][0]) strcpy(out->state_names[1], "y");
+
+    lua_getfield(L, -1, "init");
+    if (lua_istable(L, -1)) {
+        schema_str(L, -1, out->state_names[0], out->init_x, sizeof(out->init_x));
+        schema_str(L, -1, out->state_names[1], out->init_y, sizeof(out->init_y));
+    }
+    lua_pop(L, 1);
+    lua_getfield(L, -1, "step");
+    if (lua_istable(L, -1)) {
+        schema_str(L, -1, out->state_names[0], out->step_x, sizeof(out->step_x));
+        schema_str(L, -1, out->state_names[1], out->step_y, sizeof(out->step_y));
+    }
+    lua_pop(L, 1);
+    if (!out->step_x[0] || !out->step_y[0]) {
+        lua_pop(L, 1);
+        set_err(err, errsz, "custom.step must define both state expressions");
+        return 0;
+    }
+    lua_getfield(L, -1, "channels");
+    if (lua_istable(L, -1)) {
+        for (i = 0; i < out->schema.nchannels; ++i) {
+            lua_rawgeti(L, -1, i + 1);
+            if (lua_istable(L, -1)) {
+                schema_str(L, -1, "expr", out->chan_expr[i], sizeof(out->chan_expr[i]));
+                if (!out->chan_expr[i][0])
+                    strncpy(out->chan_expr[i], out->schema.channels[i].name, sizeof(out->chan_expr[i]) - 1);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+    lua_pop(L, 1);
+    return 1;
+}

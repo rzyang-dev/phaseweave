@@ -6,16 +6,16 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ## 1. 构建
 
 ```text
-[3/6] compiling C skeleton (21 objects)
+[3/6] compiling C skeleton (23 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (770,048 bytes)
-      staged 10.2 MB
-      dist/dp-phase-1.7.0.zip (3.6 MB)
+OK -> dist/dp-phase/dp-phase.exe (782,336 bytes)
+      staged 10.3 MB
+      dist/dp-phase-1.8.0.zip (3.6 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 770,048 B |
+| exe | 782,336 B |
 | zip | 约 3.7 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -41,10 +41,15 @@ OK -> dist/dp-phase/dp-phase.exe (770,048 bytes)
 -- Lua schema
   [ok]   schema hot reload parses
   [ok]   schema hot reload metadata
-selftest: 89 passed, 0 failed
+-- expressions / custom model
+  [ok]   expression precedence/functions
+  [ok]   custom model builds
+  [ok]   custom init matches built-in Hénon
+  [ok]   custom step matches built-in Hénon
+selftest: 100 passed, 0 failed
 ```
 
-`/gpu-selftest`：**95/95**（76 CPU + 旧 GPU 回归）。
+`/gpu-selftest`：**106/106**（76 CPU + 旧 GPU 回归）。
 GUI 采样仍是 CPU；GPU 只负责 atlas RGBA 显示和线叠加。
 
 ## 3. 双摆三窗口
@@ -156,14 +161,33 @@ F5 实测：把 Lua 的 `θ1/θ2` 改成 `A1/A2`，按 F5 后参数页立即变�
 
 `selftest` 新增 schema parser、metadata 应用、hot reload 解析/元数据测试。
 
-## 9. 性能
+## 9. Lua 表达式模型
+
+`experiments/experiment.lua` 的 `M.custom` 定义 2 状态 map；C 的 `expr.c` 把
+`step.x/step.y` 和 channel `expr` 编译成 postfix bytecode。
+
+```text
+/model custom
+Model: Lua Hénon map
+step: x' = 1 - a*x*x + y, y' = b*x
+channels: x, y, sqrt(x*x+y*y), abs(x)
+```
+
+- 不逐像素调用 Lua；
+- 面板 Model 下拉动态出现 Lua Hénon map；
+- 自检把 custom 与内置 Hénon 的前 10 步逐值比较（更长步数会因混沌放大浮点差异）；
+- 64×64 自定义模型仍约 140 fps。
+
+![自定义模型](shot-custom.png)
+
+## 10. 性能
 
 - 双摆 64×64：142–147 fps；
 - Logistic/Hénon 64×64：140+ fps；
 - 64×64 双摆每步约 2 ms（8 线程）；
 - 256×256 CPU 仍可算，但约 16 倍成本，GPU compute 未接 GUI。
 
-## 10. 本次修掉的问题
+## 11. 本次修掉的问题
 
 | 问题 | 根因 | 修复 |
 | --- | --- | --- |
@@ -178,7 +202,7 @@ F5 实测：把 Lua 的 `θ1/θ2` 改成 `A1/A2`，按 F5 后参数页立即变�
 | CSV 列名冲突 | x/y/state/channel 同名 | 加 `x_/y_/state_/ch_` 前缀 |
 | Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/experiment.lua |
 
-## 11. 已知边界
+## 12. 已知边界
 
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
@@ -189,13 +213,14 @@ F5 实测：把 Lua 的 `θ1/θ2` 改成 `A1/A2`，按 F5 后参数页立即变�
 7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
 8. 没有 3D 切片/连续化。
 
-## 12. 复现
+## 13. 复现
 
 ```powershell
 pwsh -File build.ps1
 .\dist\dp-phase\dp-phase.exe
 .\dist\dp-phase\dp-phase.exe /model logistic
 .\dist\dp-phase\dp-phase.exe /model henon
+.\dist\dp-phase\dp-phase.exe /model custom
 .\dist\dp-phase\dp-phase.exe /selftest
 .\dist\dp-phase\dp-phase.exe /gpu-selftest
 

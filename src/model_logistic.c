@@ -66,5 +66,6 @@ const Model LOGISTIC_MODEL = {
     { "x", NULL, NULL, NULL },
     logistic_init,
     logistic_step,
-    logistic_channels_fn
+    logistic_channels_fn,
+    NULL
 };
