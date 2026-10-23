@@ -8,14 +8,14 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (26 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (438,784 bytes)
+OK -> dist/dp-phase/dp-phase.exe (440,832 bytes)
       staged 10.4 MB
-      dist/dp-phase-1.25.0.zip (4.2 MB)
+      dist/dp-phase-1.26.0.zip (4.2 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 438,784 B |
+| exe | 440,832 B |
 | zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
@@ -54,10 +54,10 @@ OK -> dist/dp-phase/dp-phase.exe (438,784 bytes)
   [ok]   session load
   [ok]   session axes/ranges roundtrip
   [ok]   session integration roundtrip
-selftest: 127 passed, 0 failed
+selftest: 130 passed, 0 failed
 ```
 
-`/gpu-selftest`：**163/163**（124 CPU + 旧 GPU + 表达式/ODE/标准映射/GPU atlas/FTLE 回归）。
+`/gpu-selftest`：**166/166**（124 CPU + 旧 GPU + 表达式/ODE/标准映射/GPU atlas/FTLE 回归）。
 GUI 默认采样 CPU；View 的 Kernel=GPU 可启用全模型 GPU atlas（读回后再 CPU colorize/显示）。
 
 ## 3. 双摆三窗口
@@ -205,7 +205,7 @@ channels: x, y, sqrt(x*x+y*y), abs(x)
   [ok]   GPU custom dispatch
   [ok]   GPU custom state matches CPU
   [ok]   GPU custom channels match CPU
-selftest: 163 passed, 0 failed
+selftest: 166 passed, 0 failed
 ```
 
 测试用单格 10 步 + 8×8 atlas 2 步 Hénon 表达式；单格容差 1e-5，atlas 2 步逐值一致。
@@ -257,38 +257,45 @@ log(stretch)/steps；reset 后缓存，参数/轴变化重算。
 
 ![Script 会话](shot-panel-script.png)
 
-## 15. 逃逸时间
+## 15. 最终状态
+
+final 对每个 cell 积分 steps，存最终 state[0]（DP 归一化 theta1）；连续色标，
+是 basin 近似，不做离散吸引子聚类。
+
+![final](shot-final.png)
+
+## 16. 逃逸时间
 
 escape 从初始 state 逐步积分，任一分量 |state|>Escape r（默认10）或 NaN 即记录逃逸步数；
 适合 Hénon/Standard，Logistic/双摆阈值下不逃逸。结果缓存，reset 重算。
 
 ![escape](shot-escape.png)
 
-## 16. PNG 叠加
+## 17. PNG 叠加
 
 `PNG ov` 默认开：导出时用与窗口相同的 overlay 顶点，CPU Bresenham 栅格化到
 PNG；<192px 跳过轴文字，保留 Grid/选中圈。CLI `/export_png` 可无对话框导出。
 
 ![导出控件](shot-export.png)
 
-## 17. 控制流表达式
+## 18. 控制流表达式
 
 `expr.c` 新增比较/逻辑/三元/`if(cond,a,b)`。CPU 用数值真值，GLSL 条件使用 bool；
 自定义 `x_abs` 改为 `if(x < 0, -x, x)`，CPU/GPU 单格测试通过。
 
-## 18. ODE 表达式
+## 19. ODE 表达式
 
 `type="ode"` 使用 `deriv={x=...,y=...}`；CPU 与 GLSL 都走 RK4，`dt` 来自实验。
 自检用 `x'=y, y'=-x` 与解析解 `cos(1), -sin(1)` 对照；GPU 同一结果。
 
-## 19. 性能
+## 20. 性能
 
 - 双摆 64×64：142–147 fps；
 - Logistic/Hénon 64×64：140+ fps；
 - 64×64 双摆每步约 2 ms（8 线程）；
 - 256×256 CPU 仍可算，但约 16 倍成本；GPU atlas 对全模型可用，仍有 CPU 回退。
 
-## 20. 本次修掉的问题
+## 21. 本次修掉的问题
 
 | 问题 | 根因 | 修复 |
 | --- | --- | --- |
@@ -303,7 +310,7 @@ PNG；<192px 跳过轴文字，保留 Grid/选中圈。CLI `/export_png` 可无�
 | CSV 列名冲突 | x/y/state/channel 同名 | 加 `x_/y_/state_/ch_` 前缀 |
 | Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/experiment.lua |
 
-## 21. 已知边界
+## 22. 已知边界
 
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
@@ -314,7 +321,7 @@ PNG；<192px 跳过轴文字，保留 Grid/选中圈。CLI `/export_png` 可无�
 7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
 8. 没有 3D 切片/连续化。
 
-## 22. 复现
+## 23. 复现
 
 ```powershell
 pwsh -File build.ps1

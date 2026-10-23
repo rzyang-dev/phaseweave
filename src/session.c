@@ -30,6 +30,7 @@ int session_save(const char *path, const Experiment *e, const PhaseView *v,
     else if (e->post == 3) post = "variance";
     else if (e->post == 4) post = "ftle";
     else if (e->post == 5) post = "escape";
+    else if (e->post == 6) post = "final";
     f = fopen(path, "wb");
     if (!f) { if (err) snprintf(err, errsz, "cannot create %s", path); return 0; }
     fprintf(f, "DPEXPERIMENT 1\n");

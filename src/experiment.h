@@ -49,7 +49,7 @@ typedef struct {
     int nch;
     ExpChannel ch[EXP_NCH];
     int channel;
-    int post;           /* 0 raw, 1 gradient, 2 range, 3 variance, 4 FTLE, 5 escape */
+    int post;           /* 0 raw, 1 gradient, 2 range, 3 variance, 4 FTLE, 5 escape, 6 final state */
     int export_scale;   /* PNG nearest-neighbour scale: 1/2/4 */
     int export_overlay; /* draw grid/ticks/selection into PNG */
     double escape_radius; /* escape post threshold */
