@@ -4,6 +4,7 @@
 
 #include "core.h"
 #include "model.h"
+#include "schema.h"
 
 #define EXP_MAX_PARAMS MODEL_MAX_PARAMS
 #define EXP_NCH        MODEL_MAX_CHANNELS
@@ -19,6 +20,14 @@ typedef struct {
     int axis_ok;
     int group;          /* 0 = state, 1 = model */
 } ExpParam;
+
+typedef struct {
+    char name[EXP_NAME];
+    char label[EXP_LABEL];
+    char unit[16];
+    double min, max;
+    int cyclic;
+} ExpChannel;
 
 typedef struct {
     char title[80];
@@ -38,6 +47,7 @@ typedef struct {
     int paused;
 
     int nch;
+    ExpChannel ch[EXP_NCH];
     int channel;
     int post;           /* 0 raw, 1 gradient, 2 range, 3 variance */
 
@@ -67,5 +77,6 @@ void exp_cell_state(const Experiment *e, int ix, int iy, double state[MODEL_MAX_
                     double vals[EXP_MAX_PARAMS]);
 const char *exp_channel_name(const Experiment *e, int ch);
 int exp_channel_info(const Experiment *e, int ch, ExpChannelInfo *out);
+int exp_apply_schema(Experiment *e, const Schema *s, int set_defaults);
 
 #endif

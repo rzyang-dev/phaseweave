@@ -22,7 +22,7 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.6.0.zip -DestinationPath .\dist\run -Force
+Expand-Archive .\dist\dp-phase-1.7.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\dp-phase\dp-phase.exe
 
 # 直接打开某个模型
@@ -38,7 +38,7 @@ dp-phase/
   tcl86.dll / tk86.dll / libgcc_s_dw2-1.dll / zlib1.dll
   lib/tcl8.6, lib/tk8.6
   ui/panel.tcl
-  experiments/palette.lua
+  experiments/experiment.lua
 ```
 
 已验证“PATH 只剩系统目录、MINGW_ROOT 指向不存在目录”的干净副本可以启动面板。
@@ -96,7 +96,7 @@ x/y 可以是任意两个 eligible 参数：
 **Parameters**：X/Y 轴、范围、Res、dt、Steps/frame、模型参数、Apply parameters。
 面板高度按屏幕自适应（1080p 下 620 客户区），双摆 10 个参数能完整显示。
 
-**Script**：`experiments/palette.lua`、Reload palette（F5）。
+**Script**：`experiments/experiment.lua`、Reload script（F5）。脚本现在同时提供 schema 元数据和调色板。
 
 **Inspect**：右键选中像素后显示 cell、x/y 轴值、状态和通道值；map 模型没有专用窗口，这个页就是它的检查器。
 
@@ -130,14 +130,34 @@ gradient/range/variance 自动按当前画面 min/max 映射；角度差分使�
 
 ## Lua 现在负责什么
 
-`experiments/palette.lua` 是共享的调色板 + 实验元数据脚本：
+`experiments/experiment.lua` 现在同时提供**实验 schema 元数据**和调色板：
 
-- 标题/meta；
-- `palette()` / `set_scheme()` / `status()`；
-- 参数 schema 仍在 C 的 Model 表里，面板实时改，不需要 reload；
-- F5 只重读调色板。
+```lua
+M.models.double_pendulum = {
+    title = "Double pendulum",
+    axes = { "theta1", "theta2" },
+    params = {
+        { name="theta1", label="θ1", unit="rad",
+          default=0.5, min=-math.pi, max=math.pi, step=0.01, axis=true },
+        ...
+    },
+    channels = {
+        { name="energy", label="energy", unit="J",
+          min=-50, max=50, cyclic=false },
+        ...
+    },
+}
+function M.schema(id) return M.models[id] end
+```
 
-下一步会把 experiment schema/表达式模型移到 Lua，再生成 GLSL/CPU 内核；当前不是任意公式 DSL。
+- C 的 Model 仍拥有动力学/状态/step；Lua 只覆盖标题、参数 label/unit/range/default/axis、
+  通道 label/unit/range 和默认轴。
+- 名字必须匹配当前 Model；这不是任意字段/表达式模型。
+- 面板改参数仍然不需要 reload；F5 重读 schema + palette，重建 atlas，并刷新面板。
+- 参数值、用户轴在 F5 时保留；范围按 schema 更新/裁剪。
+- 已实测把 θ1/θ2 改成 A1/A2 后 F5，参数页立即显示 A1/A2。
+
+表达式模型、CPU/GLSL 代码生成是下一阶段 M5；当前不是任意公式 DSL。
 
 ## 代码结构
 
@@ -147,7 +167,8 @@ src/model.c         模型注册表
 src/model_dp.c      双摆 ODE
 src/model_logistic.c Logistic map + Lyapunov
 src/model_henon.c   Hénon map
-src/experiment.c/h  模型无关的轴/范围/通道 schema
+src/experiment.c/h  模型无关的轴/范围/通道 schema + Lua metadata 应用
+src/schema.h        Lua↔Experiment 的 schema 元数据
 src/atlas.c/h       每像素 state+params、调用模型、通道、后处理、RGBA
 src/app.c           窗口/帧循环/模型切换/选择/预设
 src/gpu.c           OpenGL 4.3 上下文、atlas RGBA 显示、线叠加
@@ -155,20 +176,21 @@ src/phase_view.c    归一化 [0,1] 视图、pick、平移/缩放、格线/圆�
 src/panel.c         Tcl/Tk 宿主与 dp_action/dp_status/dp_query
 src/png.c           最小 RGBA PNG 写入器（zlib）
 ui/panel.tcl        四页动态面板 + Model 下拉 + Inspect
-experiments/        共享调色板脚本
-src/selftest.c      CPU 76 项；含 GPU 的 82 项
+src/lua_hot.c       Lua 宿主 + palette/schema 桥
+experiments/        experiment.lua：schema 元数据 + 调色板
+src/selftest.c      CPU 89 项；含 GPU 的 95 项
 ```
 
 ## 验证
 
-- `/selftest`：**76/76**
-- `/gpu-selftest`：**82/82**
+- `/selftest`：**89/89**
+- `/gpu-selftest`：**95/95**
 - 三个模型 GUI 启动、面板切换、双摆检查器创建/销毁、Logistic/Hénon 地图都实测；
 - 详见 [docs/verification.md](docs/verification.md)，设计见 [docs/design.md](docs/design.md)。
 
 ## 已知边界 / 下一步
 
-1. Lua 仍是调色板/meta，不是模型 DSL。
+1. Lua 是 schema/metadata + palette，还不是表达式模型 DSL。
 2. GUI 采样是 CPU；GPU compute atlas 未接。
 3. 地图模型没有独立窗口检查器；用面板 **Inspect** 页。
 4. 没有文件选择对话框、实验保存/加载；导出固定到 exe 旁 exports/。

@@ -191,9 +191,9 @@ grid .f.nb.par.buttons.apply -row 0 -column 0 -sticky w
 # -------------------------------------------------------------- Script tab
 ttk::frame .f.nb.script -padding 8
 ttk::label .f.nb.script.h -text "Experiment script" -font DpHead -foreground "#555" -anchor w
-ttk::label .f.nb.script.src -text "experiments/palette.lua" -font DpSmall -foreground "#333" -anchor w -justify left -wraplength 320
-ttk::button .f.nb.script.reload -text "Reload palette (F5)" -command {act reload} -takefocus 0
-ttk::label .f.nb.script.hint -text "The model is built in for this milestone. Parameters and axes are applied from the Parameters tab; reload only refreshes the palette script." -font DpSmall -foreground "#666" -wraplength 320 -justify left
+ttk::label .f.nb.script.src -text "experiments/experiment.lua" -font DpSmall -foreground "#333" -anchor w -justify left -wraplength 320
+ttk::button .f.nb.script.reload -text "Reload script (F5)" -command {act reload} -takefocus 0
+ttk::label .f.nb.script.hint -text "The model dynamics are built in. This script owns schema metadata and the palette; parameter values still apply from the Parameters tab." -font DpSmall -foreground "#666" -wraplength 320 -justify left
 ttk::label .f.nb.script.ch -text "Axes, parameters and channels are defined by the selected model." -font DpSmall -foreground "#555" -wraplength 320 -justify left
 grid .f.nb.script.h -row 0 -column 0 -sticky ew
 grid .f.nb.script.src -row 1 -column 0 -sticky ew -pady {2 6}
@@ -378,7 +378,9 @@ proc preset {which} {
 }
 
 proc act {name {value ""}} {
-    call $name $value
+    set m [call $name $value]
+    if {$m ne ""} { set ::last $m }
+    if {$name eq "reload" || $name eq "model_set"} { rebuild_schema }
     focus .
     update_ui
 }

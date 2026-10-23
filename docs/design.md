@@ -182,27 +182,50 @@ Export CSV 每格一行，列名前缀 `x_`/`y_`/`state_`/`ch_`，避免不同�
 
 ## 10. 面板
 
-标题下 Model 下拉；三个 tab：
+标题下 Model 下拉；四个 tab：
 
-- **View**：通道、后处理、调色板、Grid/Periodic/Circle、Reset view、Angle/Mass 预设；
+- **View**：通道、后处理、调色板、颜色条、轴读数、Export PNG/CSV、Grid/Periodic/Circle、Reset view、Angle/Mass 预设；
 - **Parameters**：X/Y 轴、范围、Res/dt/Steps、模型参数、Apply；1080p 下面板 620 客户区；
-- **Script**：`experiments/palette.lua`、Reload palette。
+- **Script**：`experiments/experiment.lua`、Reload script（schema + palette）。
+- **Inspect**：选中像素的轴值/状态/通道值；所有模型通用。
 
 Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
 面板通过 `dp_query params|axes|channels|models|model|view|integration|palette|selected` 拉 schema，
 不把模型字段硬编码进 Tcl。
 
-## 11. Lua
+## 11. Lua schema + palette
 
-`experiments/palette.lua` 只负责调色板/meta；参数 schema 在 C 的 Model 表。
-F5 只重读调色板，不重置地图。下一步才把 experiment schema/表达式模型放进 Lua，
-并生成 CPU/GLSL 内核；当前每像素不解释 Lua。
+`experiments/experiment.lua` 现在同时提供 schema 元数据和调色板：
+
+```lua
+M.models.double_pendulum = {
+    title = "Double pendulum",
+    axes = { "theta1", "theta2" },
+    params = { { name="theta1", label="θ1", unit="rad",
+                 default=0.5, min=-math.pi, max=math.pi,
+                 step=0.01, axis=true }, ... },
+    channels = { { name="energy", label="energy", unit="J",
+                   min=-50, max=50, cyclic=false }, ... },
+}
+function M.schema(id) return M.models[id] end
+```
+
+- Model 仍拥有动力学/状态/step/observe；Lua 是 **metadata override**，按 name 匹配
+  C 参数/通道，不能新增字段或重排。
+- `lua_hot_schema()` 解析成 `Schema`；`exp_apply_schema()` 覆盖标题、label/unit/
+  range/default/axis 和通道元数据。
+- 启动/模型切换时 `defaults=1`；F5 时 `defaults=0`，保留参数值和用户轴，更新元数据并裁剪范围。
+- F5 会重建 atlas，Tcl 的 `act reload` 调 `rebuild_schema`；已实测 θ1/θ2→A1/A2 后
+  参数页立即更新。
+- 参数编辑仍不 reload；只有 schema/palette 变化才 F5。
+
+表达式模型/CPU/GLSL 代码生成是 M5；当前每像素不解释 Lua。
 
 ## 12. 打包
 
 `build.ps1` 六步；C 21 个对象；Tcl/Tk 动态，Lua/Fortran 静态。
 TCL_LIBRARY/TK_LIBRARY 指向 exe 目录下 lib/，不解包、不写 LOCALAPPDATA。
-zip 约 3.7 MB，exe 约 763 KB。
+zip 约 3.7 MB，exe 约 770 KB。
 
 ## 13. 物理与数值边界
 
@@ -224,7 +247,7 @@ zip 约 3.7 MB，exe 约 763 KB。
 ## 14. 路线
 
 - M4a（已完成）：colorbar、Inspect、轴读数、PNG/CSV 导出；
-- M4b：Lua experiment schema + 表达式模型 → CPU/GLSL 代码生成；
-- M5：实验保存/加载、导出预览、colorbar 细节；
+- M4b（已完成）：Lua schema 元数据 + F5 热重载；
+- M5：Lua 表达式模型 → CPU/GLSL 代码生成、实验保存/加载；
 - M6：GPU compute atlas、FTLE/盆地、Poincaré、切片；
 - 可选：map inspector、Hénon Lyapunov（切向量+QR）。

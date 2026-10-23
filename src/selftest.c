@@ -287,6 +287,92 @@ static void test_maps(void)
     }
 }
 
+static void test_schema(void)
+{
+    static const char *src =
+        "local M = {}\n"
+        "M.schema = function(id)\n"
+        "  if id ~= 'double_pendulum' then return nil end\n"
+        "  return { title='Lua pendulum', axes={'theta1','theta2'},\n"
+        "    params={\n"
+        "      {name='theta1',label='angle1',unit='rad',default=0.8,min=-1,max=1,step=0.1,axis=true},\n"
+        "      {name='theta2',label='angle2',unit='rad',default=0.1,min=-1,max=1,step=0.1,axis=true},\n"
+        "    },\n"
+        "    channels={ {name='energy',label='E',unit='J',min=-10,max=10,cyclic=false} }\n"
+        "  }\n"
+        "end\n"
+        "return M\n";
+    char err[512];
+    LuaHot *h;
+    Schema s;
+    Experiment e;
+
+    printf("-- Lua schema\n");
+    h = lua_hot_create(src, strlen(src), "schema-test", "cpu", 16, err, sizeof(err));
+    check(h != NULL, "schema Lua state creation");
+    if (!h) return;
+    check(lua_hot_schema(h, "double_pendulum", &s, err, sizeof(err)) == 1,
+          "hot.schema parses");
+    check(s.nparams == 2 && s.nchannels == 1, "schema has params/channels");
+    check(strcmp(s.title, "Lua pendulum") == 0, "schema title");
+    check(strcmp(s.params[0].label, "angle1") == 0 && s.params[0].axis,
+          "schema param metadata");
+    check(strcmp(s.axis_x, "theta1") == 0 && strcmp(s.axis_y, "theta2") == 0,
+          "schema default axes");
+    {
+        static const char *src2 =
+            "local M = {}\n"
+            "M.schema = function(id)\n"
+            "  return { title='Reloaded', axes={'theta1','theta2'},\n"
+            "    params={ {name='theta1',label='angle3',unit='rad',default=0.7,min=-1,max=1,step=0.1,axis=true} },\n"
+            "    channels={ {name='energy',label='E2',unit='J',min=-5,max=5,cyclic=false} } }\n"
+            "end\n"
+            "return M\n";
+        memset(&s, 0, sizeof(s));
+        check(lua_hot_reload(h, src2, strlen(src2), "schema-reload", err, sizeof(err)) == 1 &&
+              lua_hot_schema(h, "double_pendulum", &s, err, sizeof(err)) == 1,
+              "schema hot reload parses");
+        check(strcmp(s.params[0].label, "angle3") == 0 &&
+              strcmp(s.channels[0].label, "E2") == 0,
+              "schema hot reload metadata");
+    }
+    lua_hot_destroy(h);
+
+    exp_init(&e, &DP_MODEL);
+    memset(&s, 0, sizeof(s));
+    strcpy(s.title, "Lua pendulum");
+    strcpy(s.axis_x, "theta1");
+    strcpy(s.axis_y, "theta2");
+    s.nparams = 2;
+    strcpy(s.params[0].name, "theta1");
+    strcpy(s.params[0].label, "angle1");
+    strcpy(s.params[0].unit, "rad");
+    s.params[0].def = 0.8; s.params[0].min = -1; s.params[0].max = 1;
+    s.params[0].step = 0.1; s.params[0].axis = 1;
+    strcpy(s.params[1].name, "theta2");
+    strcpy(s.params[1].label, "angle2");
+    strcpy(s.params[1].unit, "rad");
+    s.params[1].def = 0.1; s.params[1].min = -1; s.params[1].max = 1;
+    s.params[1].step = 0.1; s.params[1].axis = 1;
+    s.nchannels = 1;
+    strcpy(s.channels[0].name, "energy");
+    strcpy(s.channels[0].label, "E");
+    strcpy(s.channels[0].unit, "J");
+    s.channels[0].min = -10; s.channels[0].max = 10;
+    check(exp_apply_schema(&e, &s, 1) > 0, "schema applies to experiment");
+    check(strcmp(e.title, "Lua pendulum") == 0, "experiment title from schema");
+    check(exp_index(&e, "theta1") >= 0 &&
+          strcmp(e.p[exp_index(&e, "theta1")].label, "angle1") == 0,
+          "parameter label from schema");
+    check(fabs(exp_value(&e, "theta1") - 0.8) < 1e-9, "schema default value");
+    {
+        ExpChannelInfo ci;
+        exp_channel_info(&e, 2, &ci);
+        check(strcmp(ci.label, "E") == 0 && fabs(ci.min + 10.0) < 1e-9,
+              "channel metadata from schema");
+    }
+}
+
 static void test_fortran(void)
 {
     DpConfig cfg = test_cfg(24);
@@ -708,6 +794,7 @@ int dp_selftest(int with_gpu)
     test_view();
     test_experiment_atlas();
     test_maps();
+    test_schema();
     test_fortran();
     test_timing();
     test_lua();

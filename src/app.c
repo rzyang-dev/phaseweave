@@ -62,6 +62,15 @@ struct App {
     char     title[512];
 };
 
+static int app_apply_schema(App *a, int defaults)
+{
+    Schema s;
+    char err[512];
+    if (!a || !a->lua) return 0;
+    if (!lua_hot_schema(a->lua, a->exp.model, &s, err, sizeof(err))) return 0;
+    return exp_apply_schema(&a->exp, &s, defaults);
+}
+
 static void app_reload(App *a);
 static void app_event(App *a, const DpEvent *ev);
 static void app_pend_close(void *user);
@@ -79,6 +88,7 @@ static void app_read_selected(App *a);
 static void app_render_phase(App *a);
 static void app_apply_experiment(App *a);
 static void app_colorize(App *a);
+static int  app_apply_schema(App *a, int defaults);
 static void app_set_model(App *a, const char *id)
 {
     const Model *m;
@@ -90,6 +100,7 @@ static void app_set_model(App *a, const char *id)
     res = a->exp.res;
     if (a->pview) { pendulum_view_destroy(a->pview); a->pview = NULL; }
     exp_init(&a->exp, m);
+    if (a->lua) app_apply_schema(a, 1);
     a->exp.res = res;
     a->selected = -1;
     if (a->atlas) {
@@ -230,7 +241,7 @@ static int app_read_disk_lua(App *a, char **data, size_t *len)
 {
     char dir[MAX_PATH];
     platform_exe_dir(dir, sizeof(dir));
-    snprintf(a->hot_path, sizeof(a->hot_path), "%s\\experiments\\palette.lua", dir);
+    snprintf(a->hot_path, sizeof(a->hot_path), "%s\\experiments\\experiment.lua", dir);
     if (platform_read_file(a->hot_path, data, len)) { a->hot_from_disk = 1; return 1; }
     snprintf(a->hot_path, sizeof(a->hot_path), "%s\\hot.lua", dir);
     if (platform_read_file(a->hot_path, data, len)) { a->hot_from_disk = 1; return 1; }
@@ -245,13 +256,13 @@ static void app_reload(App *a)
     char err[1024];
     if (!a) return;
     if (!app_read_disk_lua(a, &disk, &len)) {
-        app_error_box(a, "experiments/palette.lua not found next to dp-phase.exe");
+        app_error_box(a, "experiments/experiment.lua not found next to dp-phase.exe");
         return;
     }
     if (!a->lua) {
         a->lua = lua_hot_create(disk, len, a->hot_path, "cpu", a->exp.res, err, sizeof(err));
         if (!a->lua) {
-            app_error_box(a, err[0] ? err : "Lua palette failed to load");
+            app_error_box(a, err[0] ? err : "Lua experiment failed to load");
             platform_free(disk);
             return;
         }
@@ -263,8 +274,10 @@ static void app_reload(App *a)
         platform_free(disk);
         return;
     }
-    if (app_load_palette(a)) app_colorize(a);
-    app_set_last(a, "palette reloaded");
+    app_apply_schema(a, 0);
+    app_load_palette(a);
+    app_apply_experiment(a);
+    app_set_last(a, "schema/palette reloaded");
     app_set_title(a, 1);
     platform_free(disk);
 }
@@ -600,7 +613,7 @@ static void panel_status_cb(void *user, PanelStatus *st)
     st->sel_x = a->sel_x; st->sel_y = a->sel_y;
     st->zoom = a->view.zoom;
     strncpy(st->scheme, a->exp.palette, sizeof(st->scheme) - 1);
-    strncpy(st->source, a->hot_from_disk ? "experiments/palette.lua" : "no palette script",
+    strncpy(st->source, a->hot_from_disk ? "experiments/experiment.lua" : "no experiment script",
             sizeof(st->source) - 1);
     strncpy(st->last, a->last_action, sizeof(st->last) - 1);
 }
@@ -744,7 +757,20 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     a->inst = inst;
     a->opt = *opt;
     a->selected = -1;
+    {
+        char *disk = NULL;
+        size_t len = 0;
+        int initial_res = opt->force_res > 0 ? dp_clampi(opt->force_res, 16, 512) : 64;
+        if (app_read_disk_lua(a, &disk, &len)) {
+            lua_err[0] = 0;
+            a->lua = lua_hot_create(disk, len, a->hot_path, "cpu", initial_res, lua_err, sizeof(lua_err));
+            if (a->lua) a->use_lua = 1;
+            platform_free(disk);
+        }
+    }
     exp_init(&a->exp, opt->model ? model_by_id(opt->model) : &DP_MODEL);
+    app_apply_schema(a, 1);
+    if (a->lua) lua_hot_set_res(a->lua, a->exp.res);
     if (opt->force_res > 0) a->exp.res = dp_clampi(opt->force_res, 16, 512);
     if (opt->axis_x) exp_set_axis(&a->exp, 0, opt->axis_x);
     if (opt->axis_y) exp_set_axis(&a->exp, 1, opt->axis_y);
@@ -775,20 +801,10 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     }
     pv_init(&a->view);
     dp_phase_lut(a->lut);
+    if (a->lua) lua_hot_set_res(a->lua, a->exp.res);
+    app_load_palette(a);
 
     need_display = !(opt->headless && opt->force_kernel == DP_KERNEL_CPU);
-
-    {
-        char *disk = NULL;
-        size_t len = 0;
-        if (app_read_disk_lua(a, &disk, &len)) {
-            lua_err[0] = 0;
-            a->lua = lua_hot_create(disk, len, a->hot_path, "cpu", a->exp.res, lua_err, sizeof(lua_err));
-            if (a->lua) a->use_lua = 1;
-            platform_free(disk);
-        }
-    }
-    app_load_palette(a);
 
     a->atlas = atlas_create(&a->exp, a->exp.res, err, errsz);
     if (!a->atlas) { app_destroy(a); return NULL; }

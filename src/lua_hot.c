@@ -502,3 +502,140 @@ void lua_hot_reset(LuaHot *h)
         return;
     }
 }
+/* ---- experiment schema -------------------------------------------------
+ * Contract: hot.schema(model_id) -> table {
+ *   title, axes={x,y},
+ *   params = { {name,label,unit,default,min,max,step,axis}, ... },
+ *   channels = { {name,label,unit,min,max,cyclic}, ... }
+ * }
+ * Only metadata is exchanged; the Model callbacks still own the dynamics. */
+static void schema_str(lua_State *L, int idx, const char *key, char *out, size_t outsz)
+{
+    if (!out || outsz == 0) return;
+    lua_getfield(L, idx, key);
+    if (lua_isstring(L, -1)) {
+        strncpy(out, lua_tostring(L, -1), outsz - 1);
+        out[outsz - 1] = 0;
+    }
+    lua_pop(L, 1);
+}
+
+static double schema_num(lua_State *L, int idx, const char *key, double def)
+{
+    double v = def;
+    lua_getfield(L, idx, key);
+    if (lua_isnumber(L, -1)) v = (double)lua_tonumber(L, -1);
+    lua_pop(L, 1);
+    return v;
+}
+
+static int schema_bool(lua_State *L, int idx, const char *key, int def)
+{
+    int v = def;
+    lua_getfield(L, idx, key);
+    if (lua_isboolean(L, -1)) v = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+    return v;
+}
+
+static void parse_schema_param(lua_State *L, int idx, SchemaParam *p)
+{
+    memset(p, 0, sizeof(*p));
+    schema_str(L, idx, "name", p->name, sizeof(p->name));
+    schema_str(L, idx, "label", p->label, sizeof(p->label));
+    schema_str(L, idx, "unit", p->unit, sizeof(p->unit));
+    p->def = schema_num(L, idx, "default", 0.0);
+    p->min = schema_num(L, idx, "min", 0.0);
+    p->max = schema_num(L, idx, "max", 0.0);
+    p->step = schema_num(L, idx, "step", 0.0);
+    p->axis = schema_bool(L, idx, "axis", 0);
+}
+
+static void parse_schema_channel(lua_State *L, int idx, SchemaChannel *c)
+{
+    memset(c, 0, sizeof(*c));
+    schema_str(L, idx, "name", c->name, sizeof(c->name));
+    schema_str(L, idx, "label", c->label, sizeof(c->label));
+    schema_str(L, idx, "unit", c->unit, sizeof(c->unit));
+    c->min = schema_num(L, idx, "min", 0.0);
+    c->max = schema_num(L, idx, "max", 0.0);
+    c->cyclic = schema_bool(L, idx, "cyclic", 0);
+}
+
+int lua_hot_schema(LuaHot *h, const char *model_id, Schema *out,
+                   char *err, size_t errsz)
+{
+    lua_State *L;
+    size_t n, i;
+    if (err && errsz) err[0] = 0;
+    if (!h || !out || !model_id) return 0;
+    L = h->L;
+    memset(out, 0, sizeof(*out));
+    lua_getglobal(L, "hot");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        set_err(err, errsz, "hot table missing");
+        return 0;
+    }
+    lua_getfield(L, -1, "schema");
+    lua_remove(L, -2);
+    if (!lua_isfunction(L, -1)) {
+        lua_pop(L, 1);
+        set_err(err, errsz, "hot.schema is missing");
+        return 0;
+    }
+    lua_pushstring(L, model_id);
+    if (lua_pcall(L, 1, 1, 0) != 0) {
+        set_err(err, errsz, "hot.schema: %s",
+                lua_tostring(L, -1) ? lua_tostring(L, -1) : "?");
+        lua_pop(L, 1);
+        return 0;
+    }
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        set_err(err, errsz, "hot.schema(%s) must return a table", model_id);
+        return 0;
+    }
+    strncpy(out->model, model_id, sizeof(out->model) - 1);
+    schema_str(L, -1, "title", out->title, sizeof(out->title));
+    lua_getfield(L, -1, "axes");
+    if (lua_istable(L, -1)) {
+        lua_rawgeti(L, -1, 1);
+        if (lua_isstring(L, -1)) strncpy(out->axis_x, lua_tostring(L, -1), sizeof(out->axis_x) - 1);
+        lua_pop(L, 1);
+        lua_rawgeti(L, -1, 2);
+        if (lua_isstring(L, -1)) strncpy(out->axis_y, lua_tostring(L, -1), sizeof(out->axis_y) - 1);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    lua_getfield(L, -1, "params");
+    if (lua_istable(L, -1)) {
+        n = lua_rawlen(L, -1);
+        if (n > MODEL_MAX_PARAMS) n = MODEL_MAX_PARAMS;
+        for (i = 0; i < n; ++i) {
+            lua_rawgeti(L, -1, (int)i + 1);
+            if (lua_istable(L, -1)) {
+                parse_schema_param(L, -1, &out->params[out->nparams]);
+                if (out->params[out->nparams].name[0]) out->nparams++;
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+    lua_getfield(L, -1, "channels");
+    if (lua_istable(L, -1)) {
+        n = lua_rawlen(L, -1);
+        if (n > MODEL_MAX_CHANNELS) n = MODEL_MAX_CHANNELS;
+        for (i = 0; i < n; ++i) {
+            lua_rawgeti(L, -1, (int)i + 1);
+            if (lua_istable(L, -1)) {
+                parse_schema_channel(L, -1, &out->channels[out->nchannels]);
+                if (out->channels[out->nchannels].name[0]) out->nchannels++;
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+    lua_pop(L, 1);
+    return 1;
+}

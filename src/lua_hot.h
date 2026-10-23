@@ -14,6 +14,7 @@
 #define DP_LUA_HOT_H
 
 #include "core.h"
+#include "schema.h"
 
 typedef struct LuaHot LuaHot;
 
@@ -38,5 +39,8 @@ int     lua_hot_key(LuaHot *h, const char *name, int down, char *action, size_t 
 int     lua_hot_title(LuaHot *h, int fps, int steps, char *out, size_t out_sz,
                       char *err, size_t errsz);
 void    lua_hot_reset(LuaHot *h);
+
+int     lua_hot_schema(LuaHot *h, const char *model_id, Schema *out,
+                       char *err, size_t errsz);
 
 #endif

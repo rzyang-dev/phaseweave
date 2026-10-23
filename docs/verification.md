@@ -8,18 +8,18 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (21 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (763,392 bytes)
-      staged 10.0 MB
-      dist/dp-phase-1.6.0.zip (3.6 MB)
+OK -> dist/dp-phase/dp-phase.exe (770,048 bytes)
+      staged 10.2 MB
+      dist/dp-phase-1.7.0.zip (3.6 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 763,392 B |
+| exe | 770,048 B |
 | zip | 约 3.7 MB（docs 改动会改变 zip 字节数） |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
-| 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/palette.lua |
+| 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/experiment.lua |
 
 （GNU ld 的 PE 时间戳使每次链接的 SHA256 不同，不固定哈希。）
 
@@ -38,10 +38,13 @@ OK -> dist/dp-phase/dp-phase.exe (763,392 bytes)
   [ok]   logistic r=4 Lyapunov ~= ln 2
   [ok]   henon state stays bounded
   [ok]   logistic parameter map is non-uniform
-selftest: 76 passed, 0 failed
+-- Lua schema
+  [ok]   schema hot reload parses
+  [ok]   schema hot reload metadata
+selftest: 89 passed, 0 failed
 ```
 
-`/gpu-selftest`：**82/82**（76 CPU + 旧 GPU 回归）。
+`/gpu-selftest`：**95/95**（76 CPU + 旧 GPU 回归）。
 GUI 采样仍是 CPU；GPU 只负责 atlas RGBA 显示和线叠加。
 
 ## 3. 双摆三窗口
@@ -137,14 +140,30 @@ PNG 是 zlib 压缩的最小 RGBA writer；CSV 列有 `x_`/`y_`/`state_`/`ch_` �
 - 面板高度从 540 提到 620，解决模型行加入后 l2/g/damping 被裁切的问题。
 - View 页加入颜色条、轴读数和 Export PNG/CSV；选中值移到独立 **Inspect** 页，避免 View 高度溢出。
 
-## 8. 性能
+## 8. Lua schema 与 F5
+
+`experiments/experiment.lua` 现在同时提供 schema 元数据和调色板。启动/模型切换时
+`defaults=1`，F5 时 `defaults=0`：
+
+- C 参数/通道按 name 匹配；Lua 只能覆盖 label/unit/range/default/axis/cyclic，不能新增/重排；
+- F5 重读脚本、重建 atlas，并调用 Tcl `rebuild_schema`；
+- 参数值和用户轴保留，范围按新 schema 裁剪。
+
+启动时参数页显示的 `θ1/ω1`（而不是 C 默认的 `theta1/omega1`）证明 schema 已生效。
+F5 实测：把 Lua 的 `θ1/θ2` 改成 `A1/A2`，按 F5 后参数页立即变为：
+
+![F5 schema](shot-schema-reload.png)
+
+`selftest` 新增 schema parser、metadata 应用、hot reload 解析/元数据测试。
+
+## 9. 性能
 
 - 双摆 64×64：142–147 fps；
 - Logistic/Hénon 64×64：140+ fps；
 - 64×64 双摆每步约 2 ms（8 线程）；
 - 256×256 CPU 仍可算，但约 16 倍成本，GPU compute 未接 GUI。
 
-## 9. 本次修掉的问题
+## 10. 本次修掉的问题
 
 | 问题 | 根因 | 修复 |
 | --- | --- | --- |
@@ -157,19 +176,20 @@ PNG 是 zlib 压缩的最小 RGBA writer；CSV 列有 `x_`/`y_`/`state_`/`ch_` �
 | 轴读数/选中值不更新 | Tcl 双引号里 `[%.4g...]` 被当命令 | 用 `format {..}` + 分离 catch |
 | 选中值控件路径写错 | `.sel.l` vs `.self.l` | 改为 Inspect 页 `.f.nb.insp.txt` |
 | CSV 列名冲突 | x/y/state/channel 同名 | 加 `x_/y_/state_/ch_` 前缀 |
-| Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/palette.lua |
+| Lua 脚本名与多模型不符 | 原 double-pendulum.lua | 改为共享 experiments/experiment.lua |
 
-## 10. 已知边界
+## 11. 已知边界
 
 1. Lua 仍是 palette/meta，不是模型 DSL。
 2. 只有三个内置模型，无表达式模型。
 3. GUI 采样 CPU；GPU compute 未接。
 4. Logistic/Hénon 只有面板 Inspect，没有独立窗口 inspector。
-5. 没有文件选择对话框、实验保存/加载；PNG 只包含 atlas。
-6. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
-7. 没有 3D 切片/连续化。
+5. Lua 是 schema 元数据，不是表达式模型；不能新增参数字段或重排通道。
+6. 没有文件选择对话框、实验保存/加载；PNG 只包含 atlas。
+7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
+8. 没有 3D 切片/连续化。
 
-## 11. 复现
+## 12. 复现
 
 ```powershell
 pwsh -File build.ps1
