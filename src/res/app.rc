@@ -1,31 +1,12 @@
 #include <windows.h>
 
-/* 热逻辑脚本：点击 F5 会优先读 exe 同目录的 hot.lua，没有就读这一份 */
+/* 热逻辑脚本：点击 F5 会优先读 exe 同目录的 experiments/experiment.lua（或 hot.lua），
+ * 都找不到时读这一份内嵌副本。 */
 1001 RCDATA "lua/hot.lua"
 
 /* DPI 感知 + Win10 兼容 */
 1 24 "src/res/app.manifest"
 
-1 VERSIONINFO
-FILEVERSION 1,0,0,0
-PRODUCTVERSION 1,0,0,0
-FILEOS 0x40004
-FILETYPE 0x1
-BEGIN
-  BLOCK "StringFileInfo"
-  BEGIN
-    BLOCK "040904B0"
-    BEGIN
-      VALUE "FileDescription", "Double Pendulum Phase Space"
-      VALUE "FileVersion", "1.0.0.0"
-      VALUE "InternalName", "dp-phase"
-      VALUE "OriginalFilename", "dp-phase.exe"
-      VALUE "ProductName", "Double Pendulum Phase Space"
-      VALUE "ProductVersion", "1.0.0.0"
-    END
-  END
-  BLOCK "VarFileInfo"
-  BEGIN
-    VALUE "Translation", 0x409, 1200
-  END
-END
+/* VERSIONINFO 由 build.ps1 按 $version 生成到 build/gen/version_gen.rc，
+ * 保证 exe 资源版本、zip 名字与发布版本只有一个来源。 */
+#include "version_gen.rc"
