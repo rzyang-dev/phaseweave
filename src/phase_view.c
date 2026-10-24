@@ -406,34 +406,49 @@ int pv_build_axis_ticks(const PhaseView *v, double range, int w, int h,
                         const char *xname, const char *yname,
                         float *verts, int maxv)
 {
-    const double fracs[3] = { 0.15, 0.5, 0.85 };
+    /* min / mid / max sit on the axis ends, so the labels show the actual range */
+    const double fracs[3] = { 0.0, 0.5, 1.0 };
+    const double eps = 1e-9;
     int n = 0, i;
+    /* 5x7 vector glyphs are unreadable at one pixel per cell, so clamp to 2
+     * (an 8-character label is 96 px wide, which still fits at 256 px). */
     int pixel = h / 300;
-    if (pixel < 1) pixel = 1;
+    int name_h, top;
+    if (pixel < 2) pixel = 2;
+    name_h = 7 * pixel;
+    top = 6 + name_h + 4;
     if (!v || !verts || maxv <= 0 || w <= 0 || h <= 0) return 0;
     for (i = 0; i < 3; ++i) {
         double wx, wy;
-        int sx = (int)(fracs[i] * (double)w);
-        int sy = (int)(fracs[i] * (double)h);
+        int sx = (int)(fracs[i] * (double)(w - 1));
+        int sy = (int)(fracs[i] * (double)(h - 1));
         char buf[32];
         pv_screen_to_world(v, range, w, h, sx, h - 1, &wx, &wy);
-        if (wx + 0.5 >= 0.0 && wx + 0.5 <= 1.0) {
+        if (wx + 0.5 >= -eps && wx + 0.5 <= 1.0 + eps) {
             double val = xmin + (wx + 0.5) * (xmax - xmin);
-            int tx;
+            int labelw, tx;
             snprintf(buf, sizeof(buf), "%.3g", val);
+            labelw = (int)strlen(buf) * 6 * pixel;
+            /* left/right labels are nudged inside the frame, the middle one centred */
+            tx = (i == 0) ? 0 : (i == 2 ? w - labelw : sx - labelw / 2);
+            if (tx < 0) tx = 0;
             push_line(verts, maxv, &n, px_to_ndc_x(sx, w), px_to_ndc_y(h - 2, h),
                       px_to_ndc_x(sx, w), px_to_ndc_y(h - 8, h), 0.7, 0.7, 0.7, 1.0);
-            tx = sx - (int)(strlen(buf) * 6 * pixel / 2);
-            if (tx < 0) tx = 0;
-            draw_text(verts, maxv, &n, buf, tx, h - 34, pixel, w, h);
+            if (tx + labelw <= w)
+                draw_text(verts, maxv, &n, buf, tx, h - 34, pixel, w, h);
         }
         pv_screen_to_world(v, range, w, h, 1, sy, &wx, &wy);
-        if (wy + 0.5 >= 0.0 && wy + 0.5 <= 1.0) {
+        if (wy + 0.5 >= -eps && wy + 0.5 <= 1.0 + eps) {
             double val = ymin + (wy + 0.5) * (ymax - ymin);
+            int ty;
             snprintf(buf, sizeof(buf), "%.3g", val);
+            /* keep the top label clear of the axis name and the bottom inside */
+            ty = (i == 0) ? top : (i == 2 ? h - name_h - 6 : sy - name_h / 2);
+            if (ty < 0) ty = 0;
             push_line(verts, maxv, &n, px_to_ndc_x(1, w), px_to_ndc_y(sy, h),
                       px_to_ndc_x(7, w), px_to_ndc_y(sy, h), 0.7, 0.7, 0.7, 1.0);
-            draw_text(verts, maxv, &n, buf, 14, sy - 7 * pixel / 2, pixel, w, h);
+            if (ty + name_h <= h)
+                draw_text(verts, maxv, &n, buf, 14, ty, pixel, w, h);
         }
     }
     {
