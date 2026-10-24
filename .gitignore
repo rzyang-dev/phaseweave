@@ -6,6 +6,13 @@ dist/
 *.mod
 *.exe
 
+# runtime side effects (next to the exe or in the working directory)
+exports/
+*.dps
+*.bmp
+recent.txt
+last-session.txt
+
 # editor / os noise
 Thumbs.db
 desktop.ini
