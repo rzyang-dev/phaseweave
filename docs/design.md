@@ -9,8 +9,10 @@
 - 参数在面板改，不靠 reload 脚本；
 - 解压即用的文件夹 + zip，Tcl/Tk 动态链接。
 
-当前是 M3：三个模型、通用 Model 接口、模型下拉、动态 schema、82 项自检。
-Lua 表达式模型、CPU/GLSL、全模型 GPU、Inspect、实验保存、地图数字刻度和轴名直绘已完成；更多会话状态仍在后面。
+当前状态：PhaseWeave 1.33.0。六个模型（双摆、Logistic、Hénon、Standard、Gingerbreadman、
+Lua 表达式模型）、通用 Model/Experiment/Atlas/View/Panel 分层、Lua schema 热重载、
+CPU/GLSL 表达式代码生成、全模型 GPU compute atlas、会话保存/加载、六种分析视图与导出均已完成。
+路线图见第 14 节。
 
 ## 2. 数据流
 
@@ -206,42 +208,42 @@ Angle/Mass 是双摆专用预设；在 map 模型上点击会先切回双摆。
 - custom 模型需要当前 Lua 仍定义它；GPU 后端请求失败自动回退 CPU。
 - 自检覆盖 save/load roundtrip；CLI save→load 的离屏图 hash 一致。
 
-## 10b. 导出偏好
+## 10c. 导出偏好
 
 PNG/CSV 使用原生 Save As（默认 exe 旁 exports/）；PNG 支持 1x/2x/4x 最近邻放大；
 `PNG ov` 用同一 overlay 顶点在 CPU 上栅格化 Grid/选中圈/轴刻度（<192px 跳过文字）；
 CSV 在 ftle 模式追加 ftle 列；`export_scale/export_overlay` 存入 .dps。
 
-## 10c. converge
+## 10d. converge
 
 converge：倒数 steps/4 步前后状态距离<converge_eps（默认1e-6）二值化；
 窗口固定，eps 可编辑并存入 .dps。
 
-## 10d. k-means cluster
+## 10e. k-means cluster
 
 cluster：最终状态 k-means（K 2..16，12 次迭代），离散 LUT；不是收敛检测。
 
-## 10d. basin 分箱
+## 10f. basin 分箱
 
 basin：最终状态 8 bins（DP theta1、Logistic x、其他 atan2），离散 LUT。
 
-## 10d. 最终状态
+## 10g. 最终状态
 
 final：每 cell 积分 steps，存最终 state[0]（DP 归一化 theta1）；连续色标，
 basin 近似但不是吸引子离散聚类。
 
-## 10d. 逃逸时间
+## 10h. 逃逸时间
 
 escape：每 cell 逐步积分，|state|>escape_radius/NaN 记录步数；半径来自 Parameters，
 默认10，存入 .dps；适合 Hénon/Standard；缓存，reset 重算。
 
-## 10d. FTLE 分析
+## 10i. FTLE 分析
 
 View=ftle：每个 cell 以初始 state 为 base，扰动 state[0]，双轨积分 steps，
 存 `log(|delta|/eps)/steps`；`analysis` 数组在 atlas reset 后缓存，参数/轴变化才重算。
 按 post 自动定色标范围。不是切空间/变分方程 FTLE。
 
-## 10d. 地图数字刻度
+## 10j. 地图数字刻度
 
 `phase_view.c` 用 5×7 矢量数字在底边/左边画 min/mid/max tick；标签位置按
 当前 zoom/pan 通过 `pv_screen_to_world` 换算；轴名画在顶部，范围仍在面板读数。
@@ -292,7 +294,7 @@ zip 约 3.9 MB，exe 约 452 KB。
 已知限制：
 
 - 内置模型（双摆/Logistic/Hénon/Standard/Gingerbread）+ Lua 表达式 map/ODE；全模型 GPU + 数字刻度 + 轴名直绘已完成；
-- GUI 默认 CPU；Kernel=GPU 可启用全模型 GPU atlas；
+- GUI 默认 GPU（启动 benchmark 选后端，失败回退 CPU）；Kernel 下拉可强制 CPU/GPU；
 - map 只有面板 Inspect，没有独立窗口 inspector；
 - 文件选择/实验保存加载/PNG 叠加均已实现；
 - 能量范围固定；极端参数会饱和；
@@ -306,10 +308,9 @@ zip 约 3.9 MB，exe 约 452 KB。
 - M5b（已完成）：GLSL 代码生成 + GPU 单格验证；
 - M6（已完成）：GPU compute atlas + CPU 回退（自定义模型）；
 - M7a（已完成）：.dps 实验保存/加载 + 文件对话框 + CLI；
-- M7b（进行中）：控制流与 ODE 表达式已进 CPU+GLSL；
+- M7b（已完成）：控制流与 ODE 表达式进 CPU+GLSL；
 - M8（已完成）：全模型 GPU + 地图数字刻度 + 轴名直绘；
 - M9（已完成）：会话选中格 + `recent.txt`/`last-session.txt` 最近实验；
 - M10（已完成）：FTLE + 导出缩放；
-- M11（进行中）：盆地/逃逸时间、更多分析。
-- M8：地图轴刻度、更多会话状态、FTLE/盆地/切片；
-- 可选：map inspector、Hénon Lyapunov（切向量+QR）。
+- M11（已完成）：basin / cluster / converge / final / escape 分析视图；
+- 可选（未做）：map inspector 独立窗口、Hénon Lyapunov（切向量+QR）、Poincaré 切片。

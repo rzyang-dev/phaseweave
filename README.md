@@ -25,7 +25,8 @@
 ## 快速开始
 
 ```powershell
-cd pendulum-phase
+git clone https://github.com/rzyang-dev/phaseweave.git
+cd phaseweave
 pwsh -File build.ps1
 Expand-Archive .\dist\phaseweave-1.33.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\phaseweave\phaseweave.exe
@@ -41,6 +42,11 @@ Expand-Archive .\dist\phaseweave-1.33.0.zip -DestinationPath .\dist\run -Force
 .\dist\run\phaseweave\phaseweave.exe /model custom
 ```
 
+被执行策略拦下时（提示 build.ps1“未进行数字签名”），改用
+`pwsh -ExecutionPolicy Bypass -File build.ps1`。
+
+构建只依赖 `C:\MinGW`（GCC 6.3 + gfortran + Tcl/Tk 8.6 + Lua 5.2），可用 `MINGW_ROOT` 覆盖；`-Clean` 先清空 `build/` 和 `dist/`。
+
 发布物是解压即用的文件夹 + zip；Tcl/Tk 动态链接，不做单 exe/内嵌运行时：
 
 ```text
@@ -51,6 +57,7 @@ phaseweave/
   lib/tcl8.6, lib/tk8.6
   ui/panel.tcl
   experiments/experiment.lua
+  README.md
 ```
 
 已验证“PATH 只剩系统目录、MINGW_ROOT 指向不存在目录”的干净副本可以启动面板。
@@ -221,9 +228,9 @@ param.r=3.7
 命令行也可用：
 
 ```powershell
-.\dist\dp-phase\dp-phase.exe /save session.dps
-.\dist\dp-phase\dp-phase.exe /load session.dps
-.\dist\dp-phase\dp-phase.exe /shot out.bmp /load session.dps
+.\dist\phaseweave\phaseweave.exe /save session.dps
+.\dist\phaseweave\phaseweave.exe /load session.dps
+.\dist\phaseweave\phaseweave.exe /shot out.bmp /load session.dps
 ```
 
 `Recent` 下拉列出 exe 旁 `recent.txt` 中最近 8 个实验（显示 basename），`Open` 加载选中项；
@@ -491,8 +498,11 @@ Standby/Modified memory（RAMMap 的 Standby 列表），这通常不是应用�
 - 会话保存/恢复、最近实验、FTLE/escape/final/basin/cluster/converge；
 - 自检、物理/数值对照、portable zip、README/design/verification、git 历史。
 
-## 仓库
+## 仓库与构建
 
-- 分支：`three-windows`
+- 仓库：<https://github.com/rzyang-dev/phaseweave>（分支 `main`）
+- 构建：`pwsh -File build.ps1`，需要 MinGW.org GCC 6.3 + gfortran + Tcl/Tk 8.6 + Lua 5.2；
+  默认 `C:\MinGW`，可用 `MINGW_ROOT` 指向其他安装位置；`-Clean` 清空 `build/` 和 `dist/`；
 - 自检：`phaseweave.exe /selftest`、`/gpu-selftest`（`dp-phase.exe` 别名也可）
-- 发布：`dist/phaseweave/`、`dist/phaseweave-1.33.0.zip`（`dist/dp-phase/` 保留兼容）
+- 发布：`dist/phaseweave/`（解压即用）+ `dist/phaseweave-1.33.0.zip`；
+  `docs/` 只在仓库里，不随 zip 分发

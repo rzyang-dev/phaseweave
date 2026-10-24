@@ -1,4 +1,4 @@
-# 验证记录：三模型通用地图实验箱
+# 验证记录：PhaseWeave 2D 地图实验箱
 
 本机：Windows 10，1920×1080，125% 缩放；MinGW.org GCC 6.3、gfortran 6.3、
 Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
@@ -6,18 +6,19 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ## 1. 构建
 
 ```text
-[3/6] compiling C skeleton (27 objects)
+[3/6] compiling C skeleton
+      27 C objects
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/phaseweave.exe (451,584 bytes)
-      staged 11.0 MB
-      dist/phaseweave-1.33.0.zip (4.5 MB)
+OK -> dist/phaseweave/phaseweave.exe  (451,584 bytes)
+      staged 9.7 MB
+      dist/phaseweave-1.33.0.zip  (3.5 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
 | exe | 451,584 B |
-| zip | 约 4.5 MB |
-| 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
+| zip | 3,704,673 B（约 3.5 MB），顶层目录 `phaseweave/` |
+| 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/COMDLG32/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
 | 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/experiment.lua |
 
@@ -58,7 +59,7 @@ selftest: 141 passed, 0 failed
 ```
 
 `/gpu-selftest`：**181/181**（141 CPU + 旧 GPU + 表达式/ODE/标准映射/GPU atlas/FTLE 回归）。
-GUI 默认采样 CPU；View 的 Kernel=GPU 可启用全模型 GPU atlas（读回后再 CPU colorize/显示）。
+GUI 默认 GPU（启动 benchmark 选后端，失败回退 CPU）；View 的 Kernel 下拉可强制 CPU/GPU（GPU 读回后再 CPU colorize/显示）。
 
 ## 3. 双摆三窗口
 
@@ -124,7 +125,7 @@ Logistic map Atlas | CPU | 122 fps | 64x64 | x
 
 ![模型面板](shot-model-panel.png)
 
-## 7. 面板参数页
+## 7b. 面板参数页
 
 ![参数页](shot-panel-params.png)
 
@@ -333,30 +334,30 @@ PNG；<192px 跳过轴文字，保留 Grid/选中圈。CLI `/export_png` 可无�
 
 ## 25. 已知边界
 
-1. Lua 仍是 palette/meta，不是模型 DSL。
-2. 只有三个内置模型，无表达式模型。
-3. GPU atlas 已接全模型；默认仍为 CPU，GPU 读回+CPU colorize。
-4. Logistic/Hénon 只有面板 Inspect，没有独立窗口 inspector。
-5. Lua 是 schema 元数据，不是表达式模型；不能新增参数字段或重排通道。
-6. Save As/实验保存加载/PNG 叠加均已实现。
-7. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均。
-8. Poincaré/3D 切片/连续化不在目标内。
+1. 五个内置模型 + 一个 Lua 表达式模型；表达式模型固定 2 状态，ODE 需 `type="ode"` opt-in。
+2. GPU atlas 已接全模型；默认 GPU（benchmark 决定），CPU 是回退与验证基线；
+   GPU float 与 CPU double 在长时间混沌轨道上会分叉。
+3. map 模型（含 custom）没有独立窗口 inspector，用面板 Inspect 页。
+4. 能量通道范围固定 ±50 J，极端参数会饱和。
+5. Hénon 未算 Lyapunov；map 的 Lyapunov 是有限时间平均，不是收敛证明。
+6. FTLE 是有限差分拉伸估计，不是切空间/变分方程 FTLE。
+7. Poincaré/3D 切片/分岔连续化不在目标内。
 
 ## 26. 复现
 
 ```powershell
 pwsh -File build.ps1
-.\dist\dp-phase\dp-phase.exe
-.\dist\dp-phase\dp-phase.exe /model logistic
-.\dist\dp-phase\dp-phase.exe /model henon
-.\dist\dp-phase\dp-phase.exe /model custom
-.\dist\dp-phase\dp-phase.exe /model custom /gpu
-.\dist\dp-phase\dp-phase.exe /load session.dps
-.\dist\dp-phase\dp-phase.exe /save session.dps
-.\dist\dp-phase\dp-phase.exe /selftest
-.\dist\dp-phase\dp-phase.exe /gpu-selftest
+.\dist\phaseweave\phaseweave.exe
+.\dist\phaseweave\phaseweave.exe /model logistic
+.\dist\phaseweave\phaseweave.exe /model henon
+.\dist\phaseweave\phaseweave.exe /model custom
+.\dist\phaseweave\phaseweave.exe /model custom /gpu
+.\dist\phaseweave\phaseweave.exe /load session.dps
+.\dist\phaseweave\phaseweave.exe /save session.dps
+.\dist\phaseweave\phaseweave.exe /selftest
+.\dist\phaseweave\phaseweave.exe /gpu-selftest
 
 # 离屏
-.\dist\dp-phase\dp-phase.exe /shot logi.bmp /model logistic /steps 200 /channel lyapunov
-.\dist\dp-phase\dp-phase.exe /shot henon.bmp /model henon /steps 200 /channel radius
+.\dist\phaseweave\phaseweave.exe /shot logi.bmp /model logistic /steps 200 /channel lyapunov
+.\dist\phaseweave\phaseweave.exe /shot henon.bmp /model henon /steps 200 /channel radius
 ```
