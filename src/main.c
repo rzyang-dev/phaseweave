@@ -1,12 +1,12 @@
-/* main.c - WinMain、命令行与运行模式。
+/* main.c - WinMain、命令行与运行模式。（dp-phase.exe 是兼容别名）
  *
- *   dp-phase.exe                              窗口模式（GPU 默认，自动回退）
- *   dp-phase.exe /cpu                         强制 Fortran 内核
- *   dp-phase.exe /legacy                      强制兼容 GL 上下文（验证回退）
- *   dp-phase.exe /selftest                    无窗口自测（CPU/Lua/BMP）
- *   dp-phase.exe /gpu-selftest                + GPU 计算管线自测
- *   dp-phase.exe /shot out.bmp [/cpu|/gpu] [/res N] [/steps N]
- *   dp-phase.exe /capture out.bmp [/size N] [/steps N] [/cpu|/gpu] [/legacy]
+ *   phaseweave.exe                              窗口模式（GPU 默认，自动回退）
+ *   phaseweave.exe /cpu                         强制 Fortran 内核
+ *   phaseweave.exe /legacy                      强制兼容 GL 上下文（验证回退）
+ *   phaseweave.exe /selftest                    无窗口自测（CPU/Lua/BMP）
+ *   phaseweave.exe /gpu-selftest                + GPU 计算管线自测
+ *   phaseweave.exe /shot out.bmp [/cpu|/gpu] [/res N] [/steps N]
+ *   phaseweave.exe /capture out.bmp [/size N] [/steps N] [/cpu|/gpu] [/legacy]
  */
 #include "app.h"
 #include "platform.h"
@@ -61,20 +61,21 @@ static int parse_args(char *buf, char **argv, int max)
 
 static void usage(void)
 {
-    printf("Dynamical Systems Atlas\n\n");
-    printf("  dp-phase.exe                                 window (GPU first, Fortran fallback)\n");
-    printf("  dp-phase.exe /cpu                            force the Fortran CPU kernel\n");
-    printf("  dp-phase.exe /legacy                         force a compatibility GL context\n");
-    printf("  dp-phase.exe /selftest                       headless self-test\n");
-    printf("  dp-phase.exe /gpu-selftest                   self-test + GPU compute check\n");
-    printf("  dp-phase.exe /shot out.bmp [/cpu|/gpu] [/res N] [/steps N]\n");
-    printf("  dp-phase.exe /capture out.bmp [/size N] [/steps N] [/cpu|/gpu] [/legacy]\n");
-    printf("  dp-phase.exe /load session.dps\n");
-    printf("  dp-phase.exe /save session.dps\n");
-    printf("  dp-phase.exe /shot out.bmp /export_png atlas.png\n");
-    printf("  dp-phase.exe /shot out.bmp /model logistic /axisx r /axisy x0 /channel lyapunov\n");
-    printf("  dp-phase.exe /shot out.bmp /axisx m1 /axisy m2 /channel energy /post range /set theta1=0.5\n\n");
-    printf("  in the window:  R reset   Space pause   C palette   K GPU/CPU   F5 reload hot.lua   Esc quit\n");
+    printf("PhaseWeave - 2D dynamical systems atlas\n\n");
+    printf("  phaseweave.exe                               window (GPU first, Fortran fallback)\n");
+    printf("  phaseweave.exe /cpu                          force the Fortran CPU kernel\n");
+    printf("  phaseweave.exe /legacy                       force a compatibility GL context\n");
+    printf("  phaseweave.exe /selftest                     headless self-test\n");
+    printf("  phaseweave.exe /gpu-selftest                 self-test + GPU compute check\n");
+    printf("  phaseweave.exe /shot out.bmp [/cpu|/gpu] [/res N] [/steps N]\n");
+    printf("  phaseweave.exe /capture out.bmp [/size N] [/steps N] [/cpu|/gpu] [/legacy]\n");
+    printf("  phaseweave.exe /load session.dps\n");
+    printf("  phaseweave.exe /save session.dps\n");
+    printf("  phaseweave.exe /shot out.bmp /export_png atlas.png\n");
+    printf("  phaseweave.exe /shot out.bmp /model logistic /axisx r /axisy x0 /channel lyapunov\n");
+    printf("  phaseweave.exe /shot out.bmp /axisx m1 /axisy m2 /channel energy /post range /set theta1=0.5\n");
+    printf("  phaseweave.exe /model standard|gingerbread|custom|logistic|henon\n\n");
+    printf("  in the window:  R reset   Space pause   C palette   K GPU/CPU   F5 reload script   Esc quit\n");
 }
 
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)

@@ -379,7 +379,7 @@ static void app_reload(App *a)
     char err[1024];
     if (!a) return;
     if (!app_read_disk_lua(a, &disk, &len)) {
-        app_error_box(a, "experiments/experiment.lua not found next to dp-phase.exe");
+        app_error_box(a, "experiments/experiment.lua not found next to phaseweave.exe");
         return;
     }
     if (!a->lua) {
@@ -861,7 +861,7 @@ static int app_dialog_save(App *a)
     snprintf(file, sizeof(file), "experiment.dps");
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = platform_hwnd(a->plat);
-    ofn.lpstrFilter = "dp-phase experiment (*.dps)\0*.dps\0All files (*.*)\0*.*\0";
+    ofn.lpstrFilter = "PhaseWeave experiment (*.dps)\0*.dps\0All files (*.*)\0*.*\0";
     ofn.lpstrFile = file;
     ofn.nMaxFile = sizeof(file);
     ofn.lpstrDefExt = "dps";
@@ -879,7 +879,7 @@ static int app_dialog_load(App *a)
     file[0] = 0;
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = platform_hwnd(a->plat);
-    ofn.lpstrFilter = "dp-phase experiment (*.dps)\0*.dps\0All files (*.*)\0*.*\0";
+    ofn.lpstrFilter = "PhaseWeave experiment (*.dps)\0*.dps\0All files (*.*)\0*.*\0";
     ofn.lpstrFile = file;
     ofn.nMaxFile = sizeof(file);
     ofn.lpstrDefExt = "dps";
