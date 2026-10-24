@@ -474,7 +474,7 @@ src/selftest.c      CPU 141 项；含 GPU 的 181 项
 
 ## 内存 / 稳定性
 
-本机启动后 idle working set 约 157 MB，25 秒采样内保持稳定（未发现持续增长）。
+本机启动后 idle working set 约 172 MB（private 约 195 MB），30 秒采样内保持稳定（未发现持续增长）。
 已修的确定问题：
 
 - GPU custom shader 链接/取 uniform 失败时未删除 shader/program；
