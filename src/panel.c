@@ -121,6 +121,8 @@ static int cmd_status(ClientData cd, Tcl_Interp *ip, int objc, Tcl_Obj *const ob
     add_pair(ip, list, "fps", buf);
     snprintf(buf, sizeof(buf), "%d", st.res);
     add_pair(ip, list, "res", buf);
+    snprintf(buf, sizeof(buf), "%d", st.max_res > 0 ? st.max_res : st.res);
+    add_pair(ip, list, "max_res", buf);
     add_pair(ip, list, "scheme", st.scheme);
     add_pair(ip, list, "grid", st.grid ? "1" : "0");
     add_pair(ip, list, "periodic", st.periodic ? "1" : "0");

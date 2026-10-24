@@ -8,6 +8,7 @@ typedef struct {
     int paused;
     int kernel_gpu;
     int res;
+    int max_res;
     int fps;
     int grid, periodic, circle;
     int selected;

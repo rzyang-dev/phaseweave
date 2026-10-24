@@ -17,6 +17,7 @@
 #include "session.h"
 
 #include <commdlg.h>
+#include <math.h>
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -73,6 +74,8 @@ struct App {
     unsigned char lut[DP_LUT_N * 3];
     char     hot_path[MAX_PATH];
     char     title[512];
+    char     perf_note[256];
+    int      max_res;
     char     last_session[MAX_PATH];
     char     recent[8][MAX_PATH];
     int      nrecent;
@@ -128,6 +131,9 @@ static void app_set_model(App *a, const char *id)
     exp_init(&a->exp, m);
     if (a->lua) app_apply_schema(a, 1);
     a->exp.res = res;
+    a->view.grid = a->exp.grid;
+    a->view.periodic = a->exp.periodic;
+    a->view.circle = a->exp.circle;
     a->selected = -1;
     if (a->atlas) {
         atlas_destroy(a->atlas);
@@ -206,7 +212,7 @@ static void app_set_title(App *a, int force)
     if (!a->plat) return;
     a->title_t = now;
     exp_channel_info(&a->exp, a->exp.channel, &ci);
-    snprintf(buf, sizeof(buf), "%s Atlas | %s | %d fps | %dx%d | %s%s",
+    snprintf(buf, sizeof(buf), "PhaseWeave | %s Atlas | %s | %d fps | %dx%d | %s%s",
              a->exp.title, (a->backend_gpu && a->gpu_atlas_ok) ? "GPU" : "CPU",
              (int)(a->fps + 0.5), a->exp.res, a->exp.res,
              ci.name, a->exp.paused ? " | paused" : "");
@@ -399,6 +405,9 @@ static void app_reload(App *a)
                 int res = a->exp.res;
                 exp_init(&a->exp, &a->custom.model);
                 a->exp.res = res;
+    a->view.grid = a->exp.grid;
+    a->view.periodic = a->exp.periodic;
+    a->view.circle = a->exp.circle;
                 a->selected = -1;
             } else {
                 app_set_model(a, "double_pendulum");
@@ -777,12 +786,15 @@ static int app_load_session(App *a, const char *path)
     }
     if (s.xmax > s.xmin) { a->exp.xmin = s.xmin; a->exp.xmax = s.xmax; }
     if (s.ymax > s.ymin) { a->exp.ymin = s.ymin; a->exp.ymax = s.ymax; }
-    a->exp.res = dp_clampi(s.res, 16, 512);
+    a->exp.res = dp_clampi(s.res, 16, 1024);
     a->exp.dt = s.dt > 0.0 ? s.dt : 0.01;
     a->exp.max_steps = dp_clampi(s.steps, 0, 256);
     a->exp.grid = s.grid;
     a->exp.periodic = s.periodic;
     a->exp.circle = s.circle;
+    a->view.grid = a->exp.grid;
+    a->view.periodic = a->exp.periodic;
+    a->view.circle = a->exp.circle;
     a->exp.channel = 0;
     for (i = 0; i < a->exp.nch; ++i)
         if (strcmp(exp_channel_name(&a->exp, i), s.channel) == 0) a->exp.channel = i;
@@ -914,6 +926,9 @@ static int app_do_action(App *a, const char *name, const char *value)
         if (strcmp(name, "grid") == 0) a->exp.grid = val;
         else if (strcmp(name, "periodic") == 0) a->exp.periodic = val;
         else a->exp.circle = val;
+        a->view.grid = a->exp.grid;
+        a->view.periodic = a->exp.periodic;
+        a->view.circle = a->exp.circle;
         app_set_last(a, name);
         return 1;
     }
@@ -955,7 +970,7 @@ static int app_do_action(App *a, const char *name, const char *value)
     }
     if (strcmp(name, "res_set") == 0 && value) {
         int r = atoi(value);
-        if (r < 16 || r > 512) { app_set_last(a, "res out of range"); return 0; }
+        if (r < 16 || r > 1024) { app_set_last(a, "res out of range"); return 0; }
         a->exp.res = r;
         app_set_last(a, "resolution changed");
         return 1;
@@ -1175,6 +1190,7 @@ static void panel_status_cb(void *user, PanelStatus *st)
     st->paused = a->exp.paused;
     st->kernel_gpu = a->backend_gpu && a->gpu_atlas_ok;
     st->res = a->exp.res;
+    st->max_res = a->max_res > 0 ? a->max_res : a->exp.res;
     st->fps = (int)(a->fps + 0.5);
     st->grid = a->exp.grid;
     st->periodic = a->exp.periodic;
@@ -1368,7 +1384,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     {
         char *disk = NULL;
         size_t len = 0;
-        int initial_res = opt->force_res > 0 ? dp_clampi(opt->force_res, 16, 512) : 64;
+        int initial_res = opt->force_res > 0 ? dp_clampi(opt->force_res, 16, 1024) : 64;
         if (app_read_disk_lua(a, &disk, &len)) {
             lua_err[0] = 0;
             a->lua = lua_hot_create(disk, len, a->hot_path, "cpu", initial_res, lua_err, sizeof(lua_err));
@@ -1380,7 +1396,7 @@ App *app_create(HINSTANCE inst, const AppOptions *opt, char *err, size_t errsz)
     exp_init(&a->exp, app_resolve_model(a, opt->model ? opt->model : "double_pendulum"));
     app_apply_schema(a, 1);
     if (a->lua) lua_hot_set_res(a->lua, a->exp.res);
-    if (opt->force_res > 0) a->exp.res = dp_clampi(opt->force_res, 16, 512);
+    if (opt->force_res > 0) a->exp.res = dp_clampi(opt->force_res, 16, 1024);
     if (opt->axis_x) exp_set_axis(&a->exp, 0, opt->axis_x);
     if (opt->axis_y) exp_set_axis(&a->exp, 1, opt->axis_y);
     {
@@ -1617,3 +1633,95 @@ int app_capture(App *a, const char *path, int steps)
 const char *app_kernel_text(App *a) { (void)a; return "cpu"; }
 const char *app_gpu_info(App *a) { return (a && a->gpu) ? gpu_renderer(a->gpu) : "(none)"; }
 int app_res(App *a) { return a ? a->exp.res : 0; }
+static double app_bench_res(App *a, int res, int use_gpu, int steps)
+{
+    char err[256];
+    double t0, t1;
+    int old_backend;
+    if (!a || !a->atlas) return -1.0;
+    old_backend = a->backend_gpu;
+    atlas_resize(a->atlas, res, err, sizeof(err));
+    if (atlas_res(a->atlas) != res) return -1.0;
+    a->exp.res = res;
+    atlas_reset(a->atlas, &a->exp);
+    a->backend_gpu = use_gpu ? 1 : 0;
+    t0 = platform_now();
+    if (use_gpu) {
+        if (!app_gpu_advance(a, steps)) { a->backend_gpu = old_backend; return -1.0; }
+    } else {
+        atlas_step(a->atlas, &a->exp, steps);
+    }
+    app_colorize(a);
+    t1 = platform_now();
+    a->backend_gpu = old_backend;
+    return t1 - t0;
+}
+
+static int app_bench_max_res(double t64, double t128)
+{
+    const double budget = (1.0 / 30.0) * 0.75;
+    double n0 = 64.0 * 64.0, n1 = 128.0 * 128.0;
+    double slope, intercept, n, res;
+    if (!(t64 > 0.0) || !(t128 > 0.0)) return 64;
+    slope = (t128 - t64) / (n1 - n0);
+    if (!(slope > 1e-9)) return 1024;
+    intercept = t64 - slope * n0;
+    n = (budget - intercept) / slope;
+    if (!(n > 0.0)) return 16;
+    res = sqrt(n);
+    res = floor(res / 16.0) * 16.0;
+    if (res < 16.0) res = 16.0;
+    if (res > 1024.0) res = 1024.0;
+    return (int)res;
+}
+
+void app_autotune(App *a, int force_res)
+{
+    SYSTEM_INFO si;
+    int steps, max_cpu, max_gpu = 0, max_res, use_gpu = 0;
+    int old_res, old_backend;
+    double c64, c128, g64 = -1.0, g128 = -1.0;
+    if (!a || !a->atlas) return;
+    old_res = a->exp.res;
+    old_backend = a->backend_gpu;
+    if (a->opt.headless || a->opt.capture_path) {
+        a->max_res = a->exp.res;
+        return;
+    }
+    steps = a->exp.max_steps > 0 ? a->exp.max_steps : 8;
+    GetSystemInfo(&si);
+    c64 = app_bench_res(a, 64, 0, steps);
+    c128 = app_bench_res(a, 128, 0, steps);
+    max_cpu = app_bench_max_res(c64, c128);
+    if (a->gpu_atlas_ok) {
+        g64 = app_bench_res(a, 64, 1, steps);
+        g128 = app_bench_res(a, 128, 1, steps);
+        if (g64 > 0.0 && g128 > 0.0) {
+            max_gpu = app_bench_max_res(g64, g128);
+            if (a->opt.force_kernel != DP_KERNEL_CPU) use_gpu = 1;
+        }
+    }
+    max_res = use_gpu ? max_gpu : max_cpu;
+    if (max_res < 16) max_res = 16;
+    if (max_res > 1024) max_res = 1024;
+    a->max_res = max_res;
+    if (a->opt.load_path) {
+        a->exp.res = old_res;
+        a->backend_gpu = old_backend;
+    } else {
+        a->exp.res = force_res > 0 ? dp_clampi(force_res, 16, 1024) :
+                     max_res;
+        a->backend_gpu = use_gpu ? 1 : 0;
+    }
+    atlas_resize(a->atlas, a->exp.res, (char[256]){0}, 256);
+    atlas_reset(a->atlas, &a->exp);
+    snprintf(a->perf_note, sizeof(a->perf_note),
+             "%s | %lu CPU threads | 30fps up to %dx%d | using %dx%d",
+             use_gpu ? gpu_renderer(a->gpu) : "CPU",
+             (unsigned long)si.dwNumberOfProcessors, max_res, max_res,
+             a->exp.res, a->exp.res);
+    app_set_last(a, a->perf_note);
+    app_set_title(a, 1);
+    if (a->panel) panel_eval(a->panel, "update_ui");
+}
+

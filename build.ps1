@@ -1,7 +1,7 @@
-# build.ps1 - Double Pendulum Phase Space -> dynamical-systems atlas
+# build.ps1 - PhaseWeave -> dynamical-systems atlas
 #
 # Toolchain: C:\MinGW (GCC 6.3, gfortran, windres, objdump, Tcl/Tk 8.6).
-# Deliverable: dist/dp-phase/ (portable folder) + dist/dp-phase-1.32.0.zip.
+# Deliverable: dist/phaseweave/ (portable folder) + dist/phaseweave-1.33.0.zip.
 # Tcl/Tk is dynamically linked and shipped in the folder; no extraction at runtime.
 #
 #   .\build.ps1              build + self-test
@@ -32,6 +32,7 @@ $obj   = Join-Path $build 'obj'
 $gen   = Join-Path $build 'gen'
 $dist  = Join-Path $root 'dist'
 $stage = Join-Path $dist 'dp-phase'
+$stagePw = Join-Path $dist 'phaseweave'
 
 if ($Clean) {
     Remove-Item -Recurse -Force $build, $dist -ErrorAction SilentlyContinue
@@ -137,7 +138,7 @@ Invoke-Tool $rc @('-c', '65001', '-I', $root, '-I', (Join-Path $root 'src\res'),
 $objects += $robj
 
 Write-Host '[6/6] linking (dynamic Tcl/Tk, static C/Fortran)'
-$exe = Join-Path $stage 'dp-phase.exe'
+$exe = Join-Path $stage 'phaseweave.exe'
 $lflags = @(
     '-mwindows', '-static', '-static-libgcc', '-static-libgfortran',
     '-Wl,--gc-sections', '-Wl,--enable-stdcall-fixup', '-s',
@@ -146,6 +147,7 @@ $lflags = @(
 )
 Invoke-Tool $fc ($objects + @('-o', $exe) + $lflags) 'link'
 
+Copy-Item $exe (Join-Path $stage 'dp-phase.exe') -Force
 $size = (Get-Item $exe).Length
 Write-Host ("OK -> {0}  ({1:N0} bytes)" -f $exe, $size)
 
@@ -170,9 +172,11 @@ Copy-Item (Join-Path $root 'README.md') $stage -Force -ErrorAction SilentlyConti
 Copy-Item (Join-Path $root 'docs') (Join-Path $stage 'docs') -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ("      staged {0:N1} MB" -f ((Get-ChildItem $stage -Recurse -File | Measure-Object Length -Sum).Sum / 1MB))
 
-$zip = Join-Path $dist 'dp-phase-1.32.0.zip'
+$zip = Join-Path $dist 'phaseweave-1.33.0.zip'
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
-Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
+if (Test-Path $stagePw) { Remove-Item $stagePw -Recurse -Force }
+Copy-Item $stage $stagePw -Recurse -Force
+Compress-Archive -Path $stagePw -DestinationPath $zip -CompressionLevel Optimal
 Write-Host ("      {0}  ({1:N1} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))
 
 Write-Host ''

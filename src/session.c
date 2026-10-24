@@ -120,7 +120,7 @@ int session_load(const char *path, SessionData *s, char *err, size_t errsz)
     fclose(f);
     if (version != 1) { if (err) snprintf(err, errsz, "unsupported experiment file"); return 0; }
     if (!s->model[0]) { if (err) snprintf(err, errsz, "experiment file has no model"); return 0; }
-    if (s->res < 16 || s->res > 512) s->res = 64;
+    if (s->res < 16 || s->res > 1024) s->res = 64;
     if (s->steps < 0 || s->steps > 256) s->steps = 8;
     if (s->xmax <= s->xmin) { s->xmin = 0; s->xmax = 1; }
     if (s->ymax <= s->ymin) { s->ymin = 0; s->ymax = 1; }

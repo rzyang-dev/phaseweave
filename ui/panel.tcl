@@ -3,7 +3,7 @@
 # Parameters and axes are queried from the experiment; no Lua reload for values.
 
 if {![info exists ::panelW]} { set ::panelW 364; set ::panelH 620; set ::panelX 740; set ::panelY 340 }
-wm title . "Control Panel"
+wm title . "PhaseWeave Control"
 wm resizable . 1 1
 wm minsize . 364 420
 wm geometry . "${::panelW}x${::panelH}+${::panelX}+${::panelY}"
@@ -32,7 +32,7 @@ pack .f -fill both -expand 1
 grid columnconfigure .f 0 -weight 1
 grid rowconfigure .f 2 -weight 1
 
-ttk::label .f.title -text "Dynamical Systems Atlas" -font DpTitle -anchor w
+ttk::label .f.title -text "PhaseWeave" -font DpTitle -anchor w
 grid .f.title -row 0 -column 0 -sticky ew
 ttk::frame .f.mrow
 grid .f.mrow -row 1 -column 0 -sticky ew -pady {2 2}
@@ -319,7 +319,8 @@ proc update_ui {} {
     set ::vGrid $::s(grid)
     set ::vPeriodic $::s(periodic)
     set ::vCircle $::s(circle)
-    .f.stat.line1 configure -text "$::s(kernel_label)  |  $::s(fps) fps  |  $::s(res)x$::s(res)"
+    set k [string toupper $::s(kernel)]
+    .f.stat.line1 configure -text "$k  $::s(fps)fps  $::s(res)px  max $::s(max_res)"
     .f.stat.line2 configure -text "Selected: $::s(sel)  |  Zoom: $::s(zoom)x"
     if {[info exists ::s(kernel)]} {
         .f.nb.view.kern set [expr {$::s(kernel) eq "gpu" ? "GPU" : "CPU"}]
@@ -421,13 +422,14 @@ proc apply_params {} {
         }
         call param_set "$name=$v"
     }
-    if {[catch {set a [expr {double($::xmin)}]}] || [catch {set b [expr {double($::xmax)}]} ||
-        [catch {set c [expr {double($::ymin)}]}] || [catch {set d [expr {double($::ymax)}]}]} {
-        set ::last "range: invalid number"
-        return
+    foreach v {::xmin ::xmax ::ymin ::ymax} {
+        if {[catch {set $v [expr {double([set $v])}]}]} {
+            set ::last "range: invalid number"
+            return
+        }
     }
-    call range_set "x=$a,$b"
-    call range_set "y=$c,$d"
+    call range_set "x=$::xmin,$::xmax"
+    call range_set "y=$::ymin,$::ymax"
     if {[catch {set rv [expr {int($::res)}]}] == 0} { call res_set $rv }
     if {[catch {set ev [expr {double($::escape_radius)}]}] == 0} { call escape_set $ev }
     if {[catch {set cv [expr {int($::cluster_k)}]}] == 0} { call cluster_set $cv }

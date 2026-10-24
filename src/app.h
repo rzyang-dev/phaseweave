@@ -32,6 +32,7 @@ void  app_destroy(App *a);
 int   app_frame(App *a);
 int   app_loop(App *a);
 void  app_key(App *a, int vk, int down);
+void  app_autotune(App *a, int force_res);
 int   app_shot(App *a, const char *path, int steps);
 int   app_capture(App *a, const char *path, int steps);
 const char *app_kernel_text(App *a);

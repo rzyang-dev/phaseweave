@@ -8,15 +8,15 @@ Tcl/Tk 8.6.0、Lua 5.2、NVIDIA GTX 1650 Ti。
 ```text
 [3/6] compiling C skeleton (27 objects)
 [6/6] linking (dynamic Tcl/Tk, static C/Fortran)
-OK -> dist/dp-phase/dp-phase.exe (449,024 bytes)
-      staged 10.6 MB
-      dist/dp-phase-1.32.0.zip (4.3 MB)
+OK -> dist/dp-phase/phaseweave.exe (451,584 bytes)
+      staged 11.0 MB
+      dist/phaseweave-1.33.0.zip (4.5 MB)
 ```
 
 | 项目 | 值 |
 | --- | --- |
-| exe | 449,024 B |
-| zip | 约 3.9 MB（docs 改动会改变 zip 字节数） |
+| exe | 451,584 B |
+| zip | 约 4.5 MB |
 | 导入表 | KERNEL32/USER32/GDI32/OPENGL32/WINMM/MSVCRT + tcl86.dll/tk86.dll（zlib 静态） |
 | 随包 DLL | tcl86、tk86、libgcc_s_dw2-1、zlib1 |
 | 脚本 | lib/tcl8.6、lib/tk8.6、ui/panel.tcl、experiments/experiment.lua |
@@ -57,7 +57,7 @@ OK -> dist/dp-phase/dp-phase.exe (449,024 bytes)
 selftest: 141 passed, 0 failed
 ```
 
-`/gpu-selftest`：**181/181**（124 CPU + 旧 GPU + 表达式/ODE/标准映射/GPU atlas/FTLE 回归）。
+`/gpu-selftest`：**181/181**（141 CPU + 旧 GPU + 表达式/ODE/标准映射/GPU atlas/FTLE 回归）。
 GUI 默认采样 CPU；View 的 Kernel=GPU 可启用全模型 GPU atlas（读回后再 CPU colorize/显示）。
 
 ## 3. 双摆三窗口

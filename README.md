@@ -1,4 +1,6 @@
-# 动力学系统地图实验箱 · 双摆 / Logistic / Hénon / Standard / Gingerbreadman / Lua
+# PhaseWeave · 2D 动力学系统地图实验箱
+
+**PhaseWeave**（原 `pendulum-phase` / `dp-phase`）是双摆 / Logistic / Hénon / Standard / Gingerbreadman / Lua 的统一二维地图实验箱。
 
 一个 **二维参数/初值地图（2D map）** 实验框架：
 
@@ -25,22 +27,26 @@
 ```powershell
 cd pendulum-phase
 pwsh -File build.ps1
-Expand-Archive .\dist\dp-phase-1.32.0.zip -DestinationPath .\dist\run -Force
-.\dist\run\dp-phase\dp-phase.exe
+Expand-Archive .\dist\phaseweave-1.33.0.zip -DestinationPath .\dist\run -Force
+.\dist\run\phaseweave\phaseweave.exe
+
+# 兼容别名
+.\dist\run\phaseweave\dp-phase.exe
 
 # 直接打开某个模型
-.\dist\run\dp-phase\dp-phase.exe /model logistic
-.\dist\run\dp-phase\dp-phase.exe /model henon
-.\dist\run\dp-phase\dp-phase.exe /model standard
-.\dist\run\dp-phase\dp-phase.exe /model gingerbread
-.\dist\run\dp-phase\dp-phase.exe /model custom
+.\dist\run\phaseweave\phaseweave.exe /model logistic
+.\dist\run\phaseweave\phaseweave.exe /model henon
+.\dist\run\phaseweave\phaseweave.exe /model standard
+.\dist\run\phaseweave\phaseweave.exe /model gingerbread
+.\dist\run\phaseweave\phaseweave.exe /model custom
 ```
 
 发布物是解压即用的文件夹 + zip；Tcl/Tk 动态链接，不做单 exe/内嵌运行时：
 
 ```text
-dp-phase/
-  dp-phase.exe
+phaseweave/
+  phaseweave.exe
+  dp-phase.exe   (兼容别名)
   tcl86.dll / tk86.dll / libgcc_s_dw2-1.dll / zlib1.dll
   lib/tcl8.6, lib/tk8.6
   ui/panel.tcl
@@ -48,6 +54,22 @@ dp-phase/
 ```
 
 已验证“PATH 只剩系统目录、MINGW_ROOT 指向不存在目录”的干净副本可以启动面板。
+
+## 启动性能探测 / 分辨率
+
+启动时（GUI）会做一次轻量 benchmark：
+
+- 当前模型 64×64、128×128 各跑一遍；
+- CPU 与可用 GPU 分别计时（含 colorize/纹理上传）；
+- 以 **30 fps** 为目标，留 0.75 安全系数；
+- 默认 **GPU**，GPU shader/上下文失败回退 CPU；
+- 面板状态行显示：`GPU 55fps 192px max 192`，Last 显示 GPU renderer、CPU 线程数、
+  30fps 上限和当前使用分辨率；
+- 默认启动分辨率取实测上限（最高 1024）；`Res` 可手动输入到 **1024**，不再有 512 上限；
+- `/cpu` 强制 CPU，`/res 512` 强制分辨率；
+- 加载 `.dps` 时保留会话里的分辨率和后端。
+
+启动 benchmark 只用于选默认值；真正的 fps 仍由状态行实时显示。
 
 ## 内置模型 + Lua 自定义
 
@@ -443,6 +465,19 @@ src/selftest.c      CPU 141 项；含 GPU 的 181 项
 5. 能量通道范围固定 ±50 J；极端参数会饱和；PNG 叠加由 `PNG ov` 控制。
 6. 控制流/ODE、全模型 GPU、轴/会话/FTLE/escape/final/basin/cluster/converge、导出、Standard/Gingerbread 均已完成；Poincaré/切片是可选扩展，不是当前 2D 地图目标。
 
+## 内存 / 稳定性
+
+本机启动后 idle working set 约 157 MB，25 秒采样内保持稳定（未发现持续增长）。
+已修的确定问题：
+
+- GPU custom shader 链接/取 uniform 失败时未删除 shader/program；
+- GPU compute 之前有 `res > 181` 的人为限制，已移除（改为硬件上限 1024）；
+- atlas resize / Tcl 重建 / PNG overlay 临时缓冲均检查了释放路径。
+
+如果任务管理器显示“内存已满”但**没有高内存进程**，优先看 Windows 的
+Standby/Modified memory（RAMMap 的 Standby 列表），这通常不是应用泄漏。
+本项目进程若异常增长，可再用 `Get-Process phaseweave` 的 WorkingSet 采样确认。
+
 ## 交付状态
 
 总目标要求已覆盖：
@@ -459,5 +494,5 @@ src/selftest.c      CPU 141 项；含 GPU 的 181 项
 ## 仓库
 
 - 分支：`three-windows`
-- 自检：`dp-phase.exe /selftest`、`/gpu-selftest`
-- 发布：`dist/dp-phase/`、`dist/dp-phase-1.32.0.zip`
+- 自检：`phaseweave.exe /selftest`、`/gpu-selftest`（`dp-phase.exe` 别名也可）
+- 发布：`dist/phaseweave/`、`dist/phaseweave-1.33.0.zip`（`dist/dp-phase/` 保留兼容）

@@ -172,6 +172,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
         opt.headless = (mode == MODE_SHOT) ? 1 : 0;
         err[0] = 0;
         app = app_create(inst, &opt, err, sizeof(err));
+        if (app) app_autotune(app, opt.force_res);
         if (!app) {
             printf("error: %s\n", err[0] ? err : "app_create failed");
             free(buf);
@@ -187,6 +188,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
     err[0] = 0;
     app = app_create(inst, &opt, err, sizeof(err));
+    if (app) app_autotune(app, opt.force_res);
     if (!app) {
         platform_message_box(err[0] ? err : "startup failed", 1);
         free(buf);

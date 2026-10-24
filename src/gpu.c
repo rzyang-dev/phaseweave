@@ -141,6 +141,8 @@ static GLuint link_program(Gpu *g, GLuint vs, GLuint fs, const char *label,
         g->gl.GetProgramInfoLog(prog, (GLsizei)sizeof(log), NULL, log);
         snprintf(err, errsz, "%s: %s", label, log);
         g->gl.DeleteProgram(prog);
+        if (vs) g->gl.DeleteShader(vs);
+        if (fs) g->gl.DeleteShader(fs);
         return 0;
     }
     if (vs) g->gl.DeleteShader(vs);
@@ -776,6 +778,8 @@ int gpu_compile_custom(Gpu *g, const char *src, char *err, size_t errsz)
     g->u_custom_dt = g->gl.GetUniformLocation(prog, "uDt");
     if (g->u_custom_res < 0 || g->u_custom_steps < 0) {
         if (err) snprintf(err, errsz, "custom compute: uRes/uSteps optimized out");
+        g->gl.DeleteProgram(prog);
+        g->custom_prog = 0;
         return 0;
     }
     return 1;
@@ -793,7 +797,7 @@ int gpu_run_custom(Gpu *g, const float *cells, int res, int steps, double dt,
     }
     n = (size_t)res * (size_t)res;
     cn = n * 16u;
-    if (n > (size_t)32768u) { if (err) snprintf(err, errsz, "custom compute: res too large"); return 0; }
+    if (res > 1024) { if (err) snprintf(err, errsz, "custom compute: res too large"); return 0; }
     {
         size_t cb = cn * sizeof(float);
         size_t hb = n * 4u * sizeof(float);
